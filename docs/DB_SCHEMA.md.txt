@@ -1,0 +1,177 @@
+# Zen Space — Database Schema
+
+## Tables
+
+### profiles
+Stores user profile and role data.
+
+Fields:
+- id uuid primary key references auth.users(id)
+- role text not null
+- email text
+- name text
+- first_name text
+- last_name text
+- gender text
+- phone_number text
+- avatar_url text
+- created_at timestamp
+- updated_at timestamp
+
+### therapist_clients
+Maps therapists to clients (source of truth for “assigned” clients in RLS).
+
+Rows are created when a client successfully uses `join_therapist_session`, or when an **admin** assigns a pair (requires admin write policy on this table).
+
+Fields:
+- id uuid primary key
+- therapist_id uuid references profiles(id) (same id as auth.users)
+- client_id uuid references profiles(id)
+- session_id uuid nullable references therapist_otp_sessions(id) — last OTP session used to link, if any
+- created_at timestamp
+
+### therapist_otp_sessions
+One assessment code per row; many clients can redeem until `max_clients` or `expires_at`.
+
+Fields:
+- id uuid primary key
+- therapist_id uuid (auth user)
+- session_name text
+- otp text (6-digit)
+- max_clients integer (default 200, max 500)
+- clients_used integer
+- expires_at timestamptz
+- is_active boolean
+- created_at timestamptz
+
+### therapist_session_joins
+Tracks which client joined which session (idempotent per session + client).
+
+Fields:
+- session_id uuid references therapist_otp_sessions
+- client_id uuid
+- joined_at timestamptz
+- primary key (session_id, client_id)
+
+### assessments
+Stores client assessment sessions.
+
+Fields:
+- id uuid primary key
+- client_id uuid references profiles(id)
+- therapist_id uuid references profiles(id)
+- assessment_kind text — `benchmark` (default), `follow_up`, `check_in` (non-benchmark flows may be subscription-gated in the app)
+- status text
+- started_at timestamp
+- completed_at timestamp
+- score_total integer
+- score_data jsonb
+- therapist_observations jsonb — tag selections by therapist (only editable after `status = completed`, via RPC)
+- created_at timestamp
+
+### assessment_answers
+Stores answers for each assessment question. One row per question per assessment (**UNIQUE(assessment_id, question_id)**) for upsert/draft saves.
+
+Fields:
+- id uuid primary key
+- assessment_id uuid references assessments(id)
+- question_id text
+- question_text text
+- answer_value text
+- swipe_direction text
+- skipped boolean default false
+- created_at timestamp
+
+### reports
+Stores AI-generated assessment reports. At most **one row per assessment** (`UNIQUE(assessment_id)`). Rows are inserted/updated by the **`generate-zen-report`** Edge Function (service role), not directly from the browser.
+
+Fields:
+- id uuid primary key
+- assessment_id uuid references assessments(id)
+- client_id uuid references profiles(id)
+- therapist_id uuid references profiles(id)
+- content text — full Markdown Zen Plan report from OpenAI
+- current_state text
+- imbalance_score integer
+- blossom_zone_nervous_system integer
+- blossom_zone_emotional integer
+- bliss_zone_spiritual integer
+- daily_reflections text
+- premium_locked_content jsonb
+- created_at timestamp
+
+### subscriptions
+Stores admin-managed access control for 30-day plans.
+
+Fields:
+- id uuid primary key
+- client_id uuid references profiles(id)
+- plan_name text
+- is_active boolean
+- start_date date
+- end_date date
+- assigned_by uuid references profiles(id)
+- created_at timestamp
+
+### plan_days
+Stores 30-day plan tasks.
+
+Fields:
+- id uuid primary key
+- client_id uuid references profiles(id)
+- report_id uuid references reports(id)
+- day_number integer
+- task_title text
+- task_description text
+- focus text
+- is_current_day boolean default false
+- created_at timestamp
+
+### plan_day_status
+Stores daily completion tracking.
+
+Fields:
+- id uuid primary key
+- plan_day_id uuid references plan_days(id)
+- client_id uuid references profiles(id)
+- is_complete boolean default false
+- completed_at timestamp null
+- created_at timestamp
+
+## RLS Strategy
+Enable RLS on every table.
+
+### Profile Access
+- Users can read their own profile.
+- Admin can read all profiles.
+- Therapists can read assigned clients only.
+
+### Assessment Access
+- Clients can read their own assessments.
+- Therapists can read assessments for assigned clients.
+- Admin can read all assessments.
+
+### Report Access
+- Clients can read their own report preview.
+- Therapists can read full reports for assigned clients.
+- Admin can read all reports.
+
+### Plan Access
+- Clients can read plan days only if subscribed.
+- Therapists can read plan days for assigned clients.
+- Admin can read all plan data.
+
+## RPCs (Supabase)
+
+- **`ensure_user_profile()`** — SECURITY DEFINER; ensures `profiles` row for `auth.uid()` from `auth.users` metadata.
+- **`create_therapist_otp_session(therapist_id uuid, max_clients integer default 200, session_name text default 'Assessment')`** — therapist only; returns `session_id`, `otp`, `expires_at`, counts. One code; up to `max_clients` distinct clients (cap 500).
+- **`join_therapist_session(otp_code_param text)`** — authenticated client; uses `auth.uid()`; upserts `therapist_clients` and join row; enforces capacity and expiry.
+- **`save_therapist_observations(p_assessment_id uuid, p_observations jsonb)`** — therapist only; updates `assessments.therapist_observations` when the assessment is **completed** and the therapist is linked via `therapist_clients`.
+
+**Edge Functions (not Postgres RPCs):** `generate-zen-report` — therapist JWT; reads assessment + profile; calls OpenAI; upserts `reports` with service role. Configure `OPENAI_API_KEY` as a Supabase secret (see `docs/OPENAI_EDGE_FUNCTION.md`).
+
+## Notes
+- Use triggers to create a profile row when a new auth user signs up.
+- Keep role data in `profiles`, not only in auth metadata.
+- Index foreign keys and policy columns for performance.
+- Admin can manage `subscriptions` and, with the admin policy, insert/update/delete `therapist_clients` for manual assignment (see migrations).

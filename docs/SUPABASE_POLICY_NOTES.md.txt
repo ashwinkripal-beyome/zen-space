@@ -1,0 +1,47 @@
+# Zen Space — Supabase Policy Notes
+
+## Core Principle
+Use database tables and RLS to enforce access control. Do not rely only on frontend role checks.
+
+## Recommended Approach
+- Store user role in profiles table.
+- Use auth.users for authentication only.
+- Sync profile creation with a trigger on signup.
+- Use RLS policies on every table.
+
+## Policy Patterns
+### Profiles
+- Users can select their own profile.
+- Admin can select all profiles.
+- Therapists can select profiles for assigned clients.
+
+### Assessments
+- Clients can select their own assessments.
+- Therapists can select assigned client assessments.
+- Admin can select all assessments.
+
+### Reports
+- Clients can select their own report preview.
+- Therapists can select full assigned-client reports.
+- Admin can select all reports.
+
+### Subscriptions
+- Clients can read only their own subscription status.
+- Admin can update subscriptions.
+- Therapists can read subscription state for assigned clients.
+
+### Plans
+- Client access depends on active subscription.
+- Therapist access depends on client assignment.
+- Admin access is unrestricted.
+
+## Performance Notes
+- Index columns used in policies.
+- Keep policy functions efficient.
+- Test RLS after every schema change.
+
+## Admin checks (avoid 42P17 recursion)
+Do **not** use `EXISTS (SELECT 1 FROM profiles … role = 'admin')` inside RLS policies on `profiles` or on tables whose policies are evaluated while reading `profiles` — PostgreSQL reports **infinite recursion** (`42P17`). Use a **`SECURITY DEFINER` helper** `public.is_admin()` that reads `profiles` with owner privileges (RLS bypass inside the function), and reference `(SELECT public.is_admin())` in policies instead.
+
+## Implementation Note
+Use a trigger to create a profile row when a new user signs up, and keep sensitive authorization logic in Postgres policies rather than only in app code.[web:71][web:77][web:78]

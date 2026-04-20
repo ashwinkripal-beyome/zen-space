@@ -1,0 +1,65 @@
+# Zen Space — Auth and Roles
+
+## Authentication
+Zen Space uses Supabase Auth with:
+- Email and password.
+- Magic link as backup.
+
+## Role Model
+Roles:
+- admin
+- therapist
+- client
+
+## Login Rules
+- All users authenticate through the same auth system.
+- After login, the app checks the user role from the profiles table.
+- Based on role, the user is redirected to the correct dashboard.
+
+## Account Creation Rules
+### Admin
+- Created manually in Supabase.
+
+### Therapist
+- Created manually in Supabase.
+
+### Client
+- Can self-sign up.
+- Must complete name, email, password first.
+- Must then complete profile details:
+  - First name
+  - Last name
+  - Gender
+  - Phone number
+
+## Access Rules
+### Admin
+- Can view all data.
+- Can manage all users.
+- Can assign therapists.
+- Can assign subscriptions.
+
+### Therapist
+- Can only view clients assigned to them.
+- Can only see reports and plans for those clients.
+
+### Client
+- Can only see own data.
+- Can only access the 30-day plan if subscription is active.
+
+## Subscription Rules
+- Subscriptions are managed by admin only.
+- No payment gateway in V1.
+- A subscription flag controls access to the 30-day plan.
+- If the client is not subscribed, the 30-day plan screen is locked.
+
+## OTP Linking Rules
+- Therapist generates a 6-digit OTP.
+- Client enters OTP after login.
+- OTP links client to therapist and begins assessment.
+- OTP should be short-lived and securely stored.
+
+## Security Notes
+- Do not store authorization logic only in frontend state.
+- Use database tables and RLS for access control.
+- Roles should be checked on every protected route.

@@ -44,19 +44,21 @@
 
   .dark {
     --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
+    /* Primary text: soft off-white (not pure white) */
+    --foreground: oklch(0.90 0.008 264);
     --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
+    --card-foreground: oklch(0.93 0.008 264);
     --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
+    --popover-foreground: oklch(0.93 0.008 264);
     --primary: oklch(0.922 0 0);
     --primary-foreground: oklch(0.205 0 0);
     --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
+    --secondary-foreground: oklch(0.93 0.008 264);
     --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
+    /* Secondary / supporting text: light grey */
+    --muted-foreground: oklch(0.72 0.022 264);
     --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
+    --accent-foreground: oklch(0.93 0.008 264);
     --destructive: oklch(0.704 0.191 22.216);
     --destructive-foreground: 210 40% 98%;
     --border: oklch(1 0 0 / 10%);
@@ -68,26 +70,135 @@
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
     --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
+    --sidebar-foreground: oklch(0.93 0.008 264);
     --sidebar-primary: oklch(0.488 0.243 264.376);
     --sidebar-primary-foreground: oklch(0.985 0 0);
     --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
+    --sidebar-accent-foreground: oklch(0.93 0.008 264);
     --sidebar-border: oklch(1 0 0 / 10%);
     --sidebar-ring: oklch(0.556 0 0);
   }
   .theme {
-    --font-heading: var(--font-sans);
-    --font-sans: 'Figtree Variable', sans-serif;
+    --font-sans: var(--zen-font-sans);
+    --font-heading: var(--zen-font-heading);
   }
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
+    outline-color: color-mix(in oklch, var(--ring) 50%, transparent);
   }
   body {
-    @apply bg-background text-foreground;
+    @apply text-foreground;
+    background-color: transparent;
   }
   html {
+    color-scheme: dark;
     @apply font-sans;
+    min-height: 100%;
+    /* Mesh: electric green (TL), violet (TR), sky blue (BR); base black → navy */
+    background-color: #000000;
+    background-image:
+      radial-gradient(ellipse 95% 90% at 0% 0%, rgba(255, 129, 110, 0.315), transparent 52%),
+      radial-gradient(ellipse 115% 80% at 100% 0%, rgba(44, 52, 109, 0.419), transparent 50%),
+      radial-gradient(ellipse 100% 75% at 92% 100%, rgba(44, 52, 109, 0.42), transparent 50%),
+      linear-gradient(168deg, #000000 0%, #000000 35%, #000000 70%, #0a1628 100%);
+      /* background-image:
+      radial-gradient(ellipse 95% 90% at 0% 0%, rgba(51, 152, 202, 0.515), transparent 52%),
+      radial-gradient(ellipse 80% 60% at 70% 10%, rgba(22, 160, 158, 0.315), transparent 60%),
+      radial-gradient(ellipse 100% 75% at 92% 100%, rgba(30, 119, 127, 0.365), transparent 50%),
+      linear-gradient(168deg, #000000 0%, #000000 35%, #000000 70%, #0a1628 100%); */
+    background-attachment: fixed;
+  }
+}
+
+/* Legacy template tokens (h1–h2, code): dark appearance always — not tied to OS theme */
+html.dark {
+  --text: var(--muted-foreground);
+  --text-h: var(--foreground);
+  --bg: #16171d;
+  --border: #2e303a;
+  --code-bg: #1f2028;
+  --accent: #c084fc;
+  --accent-bg: rgba(192, 132, 252, 0.15);
+  --accent-border: rgba(192, 132, 252, 0.5);
+  --social-bg: rgba(47, 48, 58, 0.5);
+  --shadow:
+    rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
+}
+
+@layer utilities {
+  /* Use on Cards in app areas for consistent glass over the content panel gradient */
+  .glass-card-app {
+    @apply rounded-2xl border border-white/12 bg-white/[0.035] text-foreground shadow-none ring-0 backdrop-blur;
+  }
+
+  /** Thin glass-style scrollbar (WebKit + Firefox) for app main panel */
+  .app-content-scroll {
+    scrollbar-width: thin;
+    /* Firefox: solid thumb approximating zen gradient */
+    scrollbar-color: color-mix(in srgb, var(--zen-gradient-shadow) 80%, rgb(122, 9, 9)) transparent;
+  }
+  .app-content-scroll::-webkit-scrollbar {
+    width: 5px;
+  }
+  .app-content-scroll::-webkit-scrollbar-track {
+    background: transparent;
+    margin: 6px 0;
+  }
+  .app-content-scroll::-webkit-scrollbar-thumb {
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--zen-gradient-from) 72%, white),
+      color-mix(in srgb, var(--zen-gradient-via) 70%, white),
+      color-mix(in srgb, var(--zen-gradient-to) 72%, white)
+    );
+    border-radius: 9999px;
+    border: 1px solid transparent;
+    background-clip: padding-box;
+    box-shadow: 0 0 12px var(--zen-gradient-shadow);
+  }
+  .app-content-scroll::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--zen-gradient-from) 82%, white),
+      color-mix(in srgb, var(--zen-gradient-via) 80%, white),
+      color-mix(in srgb, var(--zen-gradient-to) 82%, white)
+    );
+    background-clip: padding-box;
+  }
+
+  /* Benchmark assessment card: enter + directional exit (vars set inline on element) */
+  @keyframes assessment-card-entry {
+    from {
+      opacity: 0;
+      transform: translateY(20px) scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+  .assessment-card-entry {
+    animation: assessment-card-entry 0.44s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  @keyframes assessment-exit-fly {
+    from {
+      opacity: 1;
+      transform: translate(var(--assess-from-tx, 0px), var(--assess-from-ty, 0px))
+        rotate(var(--assess-from-r, 0deg));
+    }
+    to {
+      opacity: var(--assess-op, 0);
+      transform: translate(var(--assess-tx, 0), var(--assess-ty, 0)) rotate(var(--assess-r, 0deg));
+    }
+  }
+  .assessment-card-exit-fly {
+    animation: assessment-exit-fly 0.38s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .assessment-card-entry {
+      animation: none;
+      opacity: 1;
+    }
   }
 }
 
@@ -108,11 +219,10 @@
   --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
 
-  font: 18px/145% var(--sans);
+  font: 16px/145% var(--sans);
   letter-spacing: 0.18px;
-  color-scheme: light dark;
+  color-scheme: dark;
   color: var(--text);
-  background: var(--bg);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -123,33 +233,12 @@
   }
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
-}
-
 #root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
+  width: 100%;
+  min-width: 0;
   min-height: 100svh;
+  margin: 0;
+  text-align: initial;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
@@ -201,4 +290,46 @@ code {
   line-height: 135%;
   padding: 4px 8px;
   background: var(--code-bg);
+}
+
+/* Client report / plan: print to PDF (Save as PDF) */
+@media print {
+  @page {
+    margin: 14mm;
+  }
+
+  /* App shell uses viewport height + overflow:hidden so only the main panel scrolls;
+     without this, print/PDF is clipped to the first screen. */
+  html,
+  body,
+  #root {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  .app-content-scroll {
+    overflow: visible !important;
+    background: #fff !important;
+    color: #111 !important;
+    box-shadow: none !important;
+  }
+
+  .print-root .report-html,
+  .print-root .report-html *,
+  .print-root .report-markdown,
+  .print-root .report-markdown * {
+    color: #1a1a1a !important;
+  }
+
+  .print-plan-root .report-html,
+  .print-plan-root .report-html * {
+    color: #1a1a1a !important;
+  }
+
+  .print-plan-root h2,
+  .print-plan-root h3,
+  .print-root h2 {
+    color: #111 !important;
+  }
 }

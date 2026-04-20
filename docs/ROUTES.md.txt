@@ -1,0 +1,47 @@
+# Zen Space — Routes
+
+## Public Routes
+- /login
+- /login/client
+- /login/therapist
+- /login/admin
+- /signup
+- /magic-link
+
+## Client Routes
+- /app/client
+- /app/client/profile
+- /app/client/otp
+- /app/client/assessment
+- /app/client/report
+- /app/client/plan
+- /app/client/subscription-locked
+
+## Therapist Routes
+- /app/therapist
+- /app/therapist/clients
+- /app/therapist/clients/:id
+- /app/therapist/clients/:id/otp
+- /app/therapist/clients/:id/report
+- /app/therapist/clients/:id/plan
+
+## Admin Routes
+- /app/admin
+- /app/admin/users
+- /app/admin/clients
+- /app/admin/therapists
+- /app/admin/reports
+- /app/admin/subscriptions
+
+## Route Protection
+- All /app routes require authentication.
+- Role-based redirects must be enforced.
+- Clients cannot access therapist or admin routes.
+- Therapists cannot access admin routes.
+- Admin can access all routes.
+
+## Route Layouts
+- Auth layout for login and signup.
+- Client app layout.
+- Therapist app layout.
+- Admin app layout.

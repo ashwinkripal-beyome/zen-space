@@ -1,0 +1,9 @@
+# Minimal Supabase CLI config. Set project_id when linking: supabase link --project-ref <ref>
+
+# Gateway JWT check can return 401 "Invalid JWT" for valid ES256 user tokens (JWT Signing Keys).
+# This function still validates Authorization with supabase.auth.getUser() inside the handler.
+[functions.generate-zen-report]
+verify_jwt = false
+
+[functions.generate-zen-report-self]
+verify_jwt = false

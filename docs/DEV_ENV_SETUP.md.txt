@@ -1,0 +1,63 @@
+# Zen Space — Development Environment Setup
+
+## Required Stack
+- React
+- Vite
+- TypeScript
+- Tailwind CSS
+- shadcn/ui
+- Supabase
+- React Router
+- Cursor
+
+## Prerequisites
+Install:
+- Node.js LTS
+- Git
+- VS Code or Cursor
+- Supabase CLI
+- GitHub account
+- Vercel account later for deployment
+
+## Project Setup
+1. Create a new Vite React TypeScript app.
+2. Install dependencies.
+3. Add Tailwind CSS.
+4. Install and configure shadcn/ui.
+5. Set up React Router.
+6. Set up Supabase client.
+7. Create environment variables.
+8. Build protected route structure.
+
+## Environment Variables
+- VITE_SUPABASE_URL
+- VITE_SUPABASE_ANON_KEY
+
+## Recommended Folder Structure
+- src/components
+- src/components/ui
+- src/pages
+- src/layouts
+- src/lib
+- src/hooks
+- src/routes
+- src/context
+- src/types
+- supabase
+
+## Cursor Workflow
+- Use Cursor for generating page scaffolds.
+- Keep docs in the repo so Cursor can reference them.
+- Build one screen at a time.
+- Ask Cursor to respect the screen map and auth rules.
+
+## Local Dev Rules
+- Start with auth and route protection.
+- Keep layout components reusable.
+- Use mock data before wiring full database logic.
+- Do not build the admin dashboard before client and therapist flows are stable.
+
+## Deployment
+- Vercel is the recommended deployment target.
+- Use GitHub for version control.
+- Deploy only after auth and main flows are stable.

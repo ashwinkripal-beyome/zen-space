@@ -1,0 +1,270 @@
+/**
+ * Zen Space — theme tokens (single place to tweak look & feel)
+ *
+ * Typography:  --zen-font-sans, --zen-font-heading
+ * Buttons:     --zen-gradient-from/via/to , --zen-gradient-shadow
+ * Focus rings: --ring (shadcn Button/Input/Badge), --zen-focus-ring (glass fields)
+ * Outline rings: --zen-ring-normal (shell, nav), --zen-ring-primary (hero cards), --zen-ring-secondary (supporting cards)
+ * Glass cards: .zen-glass-card, .zen-glass-card-active (softer, selected tab/nav), .zen-glass-card-warm
+ * Rose CTA:      --zen-rose-* , .zen-btn-rose-gradient (variants zenRose, secondaryBlue)
+ * Glass outline: .zen-btn-outline-glass — hover → primary gradient (variant zenOutline)
+ * Rose outline hover: .zen-btn-outline-glass-rose-hover — hover → zen rose gradient (assessment answers)
+ */
+
+:root {
+  /* ---- Typography ---- */
+  --zen-font-sans: 'Figtree Variable', ui-sans-serif, system-ui, sans-serif;
+  --zen-font-heading: var(--zen-font-sans);
+
+  /* ---- Primary gradient (buttons, key CTAs): #5198ca → #3398ca → #337cca ---- */
+  --zen-gradient-from: #5198ca;
+  --zen-gradient-via: #3398ca;
+  --zen-gradient-to: #337cca;
+  --zen-gradient-shadow: rgba(31, 91, 154, 0.447);
+  /* --zen-gradient-from: #283f84;
+  --zen-gradient-via: #374f97;
+  --zen-gradient-to: #1f3168;
+  --zen-gradient-shadow: rgba(28, 57, 185, 0.38); */
+
+
+  /* ---- Rose secondary CTA (report / plan): rose-600 → rose-500 → rose-800 ---- */
+  --zen-rose-from: #2d4795;
+  --zen-rose-via: #374f97;
+  --zen-rose-to: #1f3168;
+  --zen-rose-shadow: rgba(28, 57, 185, 0.38);
+  /* --zen-rose-from: #ad8d3f;
+  --zen-rose-via: #b99e5b;
+  --zen-rose-to: #917736;
+  --zen-rose-shadow: rgba(174, 176, 108, 0.447); */
+  
+  /* ---- Shadcn focus ring (override in one place) ---- */
+  --ring: oklch(0.72 0.17 295);
+
+  /* ---- Glass inputs / OTP ---- */
+  --zen-focus-ring: rgba(148, 139, 250, 0.45);
+  --zen-input-border-focus: rgb(196 181 253 / 0.8);
+
+  /* ---- 1px outline rings (shell / nav / cards) ---- */
+  --zen-ring-normal: rgb(255 255 255 / 0.14);
+  --zen-ring-primary: rgb(167 139 250 / 0.35);
+  --zen-ring-secondary: rgb(167 139 250 / 0.2);
+}
+
+.dark {
+  --ring: oklch(0.72 0.17 295);
+}
+
+/* Base transition applied to every <Button> — keeps transform/scale/color smooth */
+.zen-btn-base {
+  transition:
+    background-color 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-position 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 300ms ease,
+    box-shadow 300ms ease,
+    color 300ms ease,
+    transform 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    font-weight 300ms ease,
+    opacity 300ms ease;
+}
+
+/* Zen variant buttons override with same transition (specificity) */
+.zen-btn-gradient,
+.zen-btn-rose-gradient,
+.zen-btn-outline-glass,
+.zen-btn-outline-glass-rose-hover {
+  transition:
+    background-color 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-position 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 300ms ease,
+    box-shadow 300ms ease,
+    color 300ms ease,
+    transform 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    font-weight 300ms ease;
+}
+
+/* Primary gradient CTA — uses wide background + position shift for smooth hover */
+.zen-btn-gradient {
+  border-color: transparent;
+  color: white;
+  background: linear-gradient(
+    to right,
+    var(--zen-gradient-from),
+    var(--zen-gradient-via),
+    var(--zen-gradient-to),
+    color-mix(in srgb, var(--zen-gradient-to) 85%, white)
+  );
+  background-size: 150% 100%;
+  background-position: 0% 50%;
+  box-shadow: 0 10px 12px -6px var(--zen-gradient-shadow);
+}
+.zen-btn-gradient:hover {
+  background-position: 100% 50%;
+  box-shadow: 0 12px 12px -4px var(--zen-gradient-shadow);
+}
+
+/* Rose secondary CTA */
+.zen-btn-rose-gradient {
+  border-color: transparent;
+  color: white;
+  background: linear-gradient(
+    to right,
+    var(--zen-rose-from),
+    var(--zen-rose-via),
+    var(--zen-rose-to),
+    color-mix(in srgb, var(--zen-rose-to) 85%, white)
+  );
+  background-size: 150% 100%;
+  background-position: 0% 50%;
+  box-shadow: 0 10px 28px -6px var(--zen-rose-shadow);
+}
+.zen-btn-rose-gradient:hover {
+  background-position: 100% 50%;
+  box-shadow: 0 12px 32px -4px var(--zen-rose-shadow);
+}
+
+/** Glass outline button: hover fills with primary zen gradient */
+.zen-btn-outline-glass {
+  border: 1px solid rgb(255 255 255 / 0.3);
+  background-color: rgb(255 255 255 / 0.06);
+  color: var(--foreground);
+  box-shadow: none;
+}
+.zen-btn-outline-glass:hover:not(:disabled) {
+  border-color: transparent;
+  color: white;
+  background: linear-gradient(
+    to right,
+    var(--zen-gradient-from),
+    var(--zen-gradient-via),
+    var(--zen-gradient-to)
+  );
+  box-shadow: 0 10px 28px -6px var(--zen-gradient-shadow);
+}
+
+/** Glass outline: hover → zen rose gradient */
+.zen-btn-outline-glass-rose-hover {
+  border: 1px solid rgb(255 255 255 / 0.3);
+  background-color: rgb(255 255 255 / 0.06);
+  color: var(--foreground);
+  box-shadow: none;
+}
+.zen-btn-outline-glass-rose-hover:hover:not(:disabled) {
+  border-color: transparent;
+  color: white;
+  background: linear-gradient(
+    to right,
+    color-mix(in srgb, var(--zen-rose-from) 88%, white),
+    color-mix(in srgb, var(--zen-rose-via) 88%, white),
+    color-mix(in srgb, var(--zen-rose-to) 88%, white)
+  );
+  box-shadow: 0 10px 28px -6px var(--zen-rose-shadow);
+}
+
+/** Active state for outline-glass buttons (mirrors hover, used for selected answer) */
+.zen-btn-outline-glass-active {
+  border-color: transparent;
+  color: white;
+  background: linear-gradient(
+    to right,
+    var(--zen-gradient-from),
+    var(--zen-gradient-via),
+    var(--zen-gradient-to)
+  );
+  box-shadow: 0 10px 28px -6px var(--zen-gradient-shadow);
+  transform: scale(1.02);
+  font-weight: 600;
+}
+
+.zen-glass-control {
+  border-radius: 0.75rem;
+  border-color: rgb(255 255 255 / 0.3);
+  background-color: rgb(255 255 255 / 0.15);
+  color: var(--foreground);
+}
+.zen-glass-control:focus-visible {
+  outline: none;
+  border-color: var(--zen-input-border-focus);
+  box-shadow: 0 0 0 2px var(--zen-focus-ring);
+}
+
+.zen-otp-cell {
+  border-radius: 0.75rem;
+  border-color: rgb(255 255 255 / 0.3);
+  background-color: rgb(255 255 255 / 0.15);
+  color: var(--foreground);
+}
+.zen-otp-cell:focus-visible {
+  outline: none;
+  border-color: var(--zen-input-border-focus);
+  box-shadow: 0 0 0 2px var(--zen-focus-ring);
+}
+
+/** Sidebar + main content panel: normal ring + depth shadow */
+.zen-shell-surface {
+  box-shadow:
+    0 0 0 1px var(--zen-ring-normal),
+    0 8px 40px rgba(0, 0, 0, 0.18);
+}
+
+/** Nav pill / chrome accent (same colour as shell edge) */
+.zen-outline-normal {
+  box-shadow: 0 0 0 1px var(--zen-ring-normal);
+}
+
+.zen-ring-primary {
+  box-shadow: 0 0 0 1px var(--zen-ring-primary);
+}
+
+.zen-ring-secondary {
+  box-shadow: 0 0 0 1px var(--zen-ring-secondary);
+}
+
+/** Light glass surface — same recipe as Benchmark “review answers” rows */
+.zen-glass-card {
+  border: 1px solid rgb(255 255 255 / 0.12);
+  background-color: rgb(255 255 255 / 0.055);
+  color: var(--foreground);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: none;
+}
+
+/** Sidebar idle link hover: same glass as `.zen-glass-card` without forcing text colour (stays muted until `hover:text-foreground`). */
+.zen-sidebar-nav-idle:hover {
+  border: 1px solid rgb(255 255 255 / 0.12);
+  background-color: rgb(255 255 255 / 0.055);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: none;
+}
+
+/** Softer glass — active report tab, active sidebar item (lighter border, fill, blur than `.zen-glass-card`). */
+.zen-glass-card-active,
+.zen-sidebar-nav-active {
+  border: 1px solid rgb(255 255 255 / 0.09);
+  background-color: rgb(255 255 255 / 0.142);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-shadow: none;
+}
+
+/** Assessment card zone gradients */
+.assessment-cardbg1 {
+  background-image: linear-gradient(to bottom right, #1f3168, #374f97, #283f84);
+}
+.assessment-cardbg2 {
+  background-image: linear-gradient(to bottom right, #5e2244, #8b3a6a, #6b2e52);
+}
+.assessment-cardbg3 {
+  background-image: linear-gradient(to bottom right, #1a4a3a, #2d6b52, #1f5742);
+}
+
+/** Amber-tinted glass (alerts / locks) — same translucency, warm border */
+.zen-glass-card-warm {
+  border: 1px solid rgb(251 191 36 / 0.22);
+  background-color: rgb(245 158 11 / 0.04);
+  color: var(--foreground);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: none;
+}

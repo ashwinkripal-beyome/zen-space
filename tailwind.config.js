@@ -1,5 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 export default {
+  darkMode: 'class',
   content: [
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
@@ -7,6 +8,11 @@ export default {
   theme: {
     extend: {
       colors: {
+        border: 'var(--border)',
+        input: 'var(--input)',
+        ring: 'var(--ring)',
+        background: 'var(--background)',
+        foreground: 'var(--foreground)',
         midnight: {
           900: '#0A0F1A',
           800: '#0F1B2E',
@@ -27,8 +33,22 @@ export default {
         },
       },
       fontFamily: {
-        sans: ['Inter', 'ui-sans-serif', 'system-ui'],
-        display: ['Inter', 'ui-sans-serif', 'system-ui'],
+        sans: ['var(--zen-font-sans)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        heading: ['var(--zen-font-heading)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        display: ['var(--zen-font-heading)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+      },
+      keyframes: {
+        shake: {
+          '0%, 100%': { transform: 'translateX(0)' },
+          '15%': { transform: 'translateX(-8px)' },
+          '30%': { transform: 'translateX(8px)' },
+          '45%': { transform: 'translateX(-6px)' },
+          '60%': { transform: 'translateX(6px)' },
+          '75%': { transform: 'translateX(-3px)' },
+        },
+      },
+      animation: {
+        shake: 'shake 0.45s ease-in-out',
       },
     },
   },

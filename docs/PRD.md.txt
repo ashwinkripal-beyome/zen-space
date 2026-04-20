@@ -1,0 +1,104 @@
+# Zen Space — Product Requirements Document
+
+## Product Summary
+Zen Space is a premium mental wellness web app for Zariyaa. It supports three roles: Admin, Therapist, and Client. The app focuses on assessments, AI-generated reports, and a 30-day guided plan.
+
+## Goals
+- Create a modern, emotionally calm, premium user experience.
+- Support role-based access for Admin, Therapist, and Client.
+- Allow therapists to run assessments and review reports for assigned clients.
+- Allow admins to manage therapists, clients, and subscriptions.
+- Allow clients to complete assessments and follow a 30-day plan.
+
+## V1 Scope
+### In Scope
+- Email/password auth.
+- Magic link backup on the same login screen.
+- Role-based access control.
+- Client signup flow.
+- Client profile details screen.
+- Therapist OTP generation and client linking.
+- Swipe-based assessment experience.
+- AI report preview.
+- Subscription-gated 30-day plan.
+- Therapist dashboard.
+- Admin dashboard.
+
+### Out of Scope
+- Payment gateway.
+- Client self-purchase flow.
+- Public marketing landing page.
+- Advanced analytics beyond core dashboards.
+- Multi-tenant organizations.
+- Native mobile app.
+
+## User Roles
+### Admin
+- Create therapists.
+- Create admin users.
+- View all clients, therapists, reports, plans, and progress.
+- Assign subscriptions to clients manually.
+- Assign clients to therapists.
+
+### Therapist
+- See only assigned clients.
+- Generate 6-digit OTPs for client linking.
+- View full reports for assigned clients.
+- View and track client adherence to 30-day plans.
+
+### Client
+- Sign up and log in.
+- Complete profile details.
+- Enter OTP from therapist to start assessment.
+- Complete assessment using swipe cards.
+- View partial AI-generated report.
+- Access 30-day plan if subscribed.
+
+## Core Flows
+### Client Flow
+1. Sign up with name, email, password.
+2. Complete profile details.
+3. Log in.
+4. Enter therapist OTP.
+5. Complete assessment.
+6. View report preview.
+7. Access 30-day plan if subscription is active.
+
+### Therapist Flow
+1. Log in.
+2. View assigned clients.
+3. Generate OTP for a client.
+4. Review reports and plans.
+5. Track adherence.
+
+### Admin Flow
+1. Log in.
+2. Manage therapists and clients.
+3. Assign therapists to clients.
+4. Assign subscription plans.
+5. Review all reports and analytics.
+
+## UX Principles
+- Extremely modern and premium.
+- Soft gradients.
+- Glassmorphism where appropriate.
+- Calm, reflective, and visually elegant.
+- Minimal friction in authentication and assessment.
+- One focal action per screen.
+- The current task should always be visually emphasized.
+
+## Success Criteria
+- Clients can complete onboarding and assessment without confusion.
+- Therapists can manage their client list efficiently.
+- Admins can control access and subscriptions easily.
+- The UI feels premium and current.
+
+## Build Order
+1. Setup environment.
+2. Setup Supabase auth and database schema.
+3. Build auth and role routing.
+4. Build client onboarding.
+5. Build therapist workflows.
+6. Build assessment and report screens.
+7. Build 30-day plan screen.
+8. Build admin dashboard last.

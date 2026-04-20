@@ -1,0 +1,47 @@
+# Zen Space — Screen Map
+
+## Public Screens
+- Login selection screen.
+- Email/password login.
+- Magic link backup login.
+- Client signup screen.
+
+## Client Screens
+- Client profile completion screen.
+- OTP entry screen.
+- Assessment intro screen.
+- Swipe assessment screen.
+- Assessment progress screen.
+- Report preview screen.
+- Subscription locked screen.
+- 30-day plan timeline screen.
+
+## Therapist Screens
+- Therapist dashboard.
+- Client list screen.
+- Client detail screen.
+- OTP generator screen.
+- Full report screen.
+- Plan adherence screen.
+
+## Admin Screens
+- Admin dashboard.
+- All clients screen.
+- All therapists screen.
+- Reports overview screen.
+- Subscription management screen.
+
+## Navigation Rules
+- Authenticated users go directly to their role dashboard.
+- Unauthenticated users go to login.
+- Role mismatch should redirect to the correct dashboard.
+- Locked screens should explain what is restricted and why.
+
+## Screen Priority for V1
+1. Auth screens.
+2. Client signup and profile flow.
+3. OTP and assessment.
+4. Report preview.
+5. 30-day plan.
+6. Therapist dashboard.
+7. Admin dashboard last.
