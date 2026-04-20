@@ -9,14 +9,22 @@ import { useAuth } from '@/hooks/useAuth'
 import { useClientOnboarding } from '@/hooks/useClientOnboarding.tsx'
 import { pageStaggerItemStyle, usePageStaggerVisible } from '@/hooks/usePageStaggerVisible'
 import { supabase } from '@/lib/supabase'
+import { printZenPlanPdf } from '@/lib/zenPrintDocument'
+import { zenPrintPdfMetadata } from '@/lib/zenPrintPayloadHelpers'
 
 export function ClientPlanPage() {
-  const { user } = useAuth()
+  const { user, profile } = useAuth()
   const { hasTherapists, therapistResolutionPending } = useClientOnboarding()
   const [loading, setLoading] = useState(true)
   const [latestReport, setLatestReport] = useState<{
     id: string
     plan_section: string | null
+    report_section: string | null
+    ritual_section: string | null
+    final_narrative_section: string | null
+    content: string | null
+    created_at: string | null
+    assessment: { score_total?: number | null; score_data?: unknown } | null
   } | null>(null)
   const planContent = latestReport?.plan_section ?? null
   const reportId = latestReport?.id ?? null
@@ -31,7 +39,9 @@ export function ClientPlanPage() {
 
     let { data, error } = await supabase
       .from('reports')
-      .select('id, plan_section, content')
+      .select(
+        'id, plan_section, report_section, ritual_section, final_narrative_section, content, created_at, assessments ( score_total, score_data )'
+      )
       .eq('client_id', user.id)
       .order('created_at', { ascending: false })
       .limit(1)
@@ -40,7 +50,7 @@ export function ClientPlanPage() {
     if (error) {
       const fallback = await supabase
         .from('reports')
-        .select('id, content')
+        .select('id, content, created_at')
         .eq('client_id', user.id)
         .order('created_at', { ascending: false })
         .limit(1)
@@ -54,9 +64,23 @@ export function ClientPlanPage() {
       setLatestReport(null)
     } else if (data) {
       const row = data as Record<string, unknown>
+      const join = row.assessments as Record<string, unknown> | Record<string, unknown>[] | null | undefined
+      const assessmentRow = Array.isArray(join) ? join[0] : join
       setLatestReport({
         id: String(row.id ?? ''),
         plan_section: (row.plan_section as string) || null,
+        report_section: (row.report_section as string) || null,
+        ritual_section: (row.ritual_section as string) || null,
+        final_narrative_section: (row.final_narrative_section as string) || null,
+        content: (row.content as string) || null,
+        created_at: typeof row.created_at === 'string' ? row.created_at : null,
+        assessment: assessmentRow
+          ? {
+              score_total:
+                typeof assessmentRow.score_total === 'number' ? assessmentRow.score_total : null,
+              score_data: assessmentRow.score_data,
+            }
+          : null,
       })
     }
     setLoading(false)
@@ -111,6 +135,42 @@ export function ClientPlanPage() {
     )
   }
 
+  const handleDownloadPdf = () => {
+    if (!latestReport) return
+    const reportHtml = latestReport.report_section || latestReport.content || ''
+    const ritualHtml = latestReport.ritual_section || ''
+    const finalHtml = latestReport.final_narrative_section || ''
+    const planHtml = latestReport.plan_section || ''
+    const meta = zenPrintPdfMetadata(
+      latestReport.created_at,
+      profile
+        ? {
+            name: profile.name,
+            first_name: profile.first_name,
+            last_name: profile.last_name,
+            gender: profile.gender,
+            age: profile.age ?? null,
+          }
+        : null,
+      latestReport.assessment
+    )
+    printZenPlanPdf({
+      reportHtml,
+      finalNarrativeHtml: finalHtml || undefined,
+      ritualHtml: ritualHtml || undefined,
+      planHtml: planHtml || undefined,
+      ...meta,
+    })
+  }
+
+  const canPrintPdf =
+    latestReport &&
+    (latestReport.report_section ||
+      latestReport.content ||
+      latestReport.ritual_section ||
+      latestReport.final_narrative_section ||
+      latestReport.plan_section)
+
   return (
     <div className="space-y-6">
       <div
@@ -119,7 +179,13 @@ export function ClientPlanPage() {
       >
         <h1 className="text-3xl font-bold text-foreground">18-Day Plan</h1>
         {planContent ? (
-          <Button type="button" variant="zenOutline" size="sm" onClick={() => window.print()}>
+          <Button
+            type="button"
+            variant="zenOutline"
+            size="sm"
+            onClick={handleDownloadPdf}
+            disabled={!canPrintPdf}
+          >
             <Download className="mr-1.5 size-4" aria-hidden />
             Download PDF
           </Button>
@@ -140,14 +206,6 @@ export function ClientPlanPage() {
               )}
             </CardContent>
           </Card>
-
-          <div className="hidden print:block print-plan-root space-y-4 text-black">
-            <header className="border-b border-neutral-300 pb-3">
-              <h1 className="text-2xl font-bold text-neutral-900">18-Day Plan</h1>
-              <p className="text-sm text-neutral-600">Zen Space</p>
-            </header>
-            <PlanTimeline html={planContent} />
-          </div>
         </>
       ) : (
         <Card

@@ -1,33 +1,16 @@
 import { useMemo } from 'react'
-import DOMPurify from 'dompurify'
 import { ReportBody } from '@/components/ReportBody'
 import { ReportHtml } from '@/components/ReportHtml'
-
-const ALLOWED_TAGS = ['h2', 'h3', 'p', 'ul', 'ol', 'li', 'strong', 'em', 'br', 'div']
-const ALLOWED_ATTR = ['class', 'data-day']
-
-function strip18DayNodes(root: HTMLElement) {
-  const candidates = root.querySelectorAll('h1, h2, h3, h4, p, div')
-  const toRemove: Element[] = []
-  candidates.forEach(el => {
-    const t = el.textContent?.replace(/\s+/g, ' ').trim() ?? ''
-    if (/^18[-–]?\s*DAY\s+PERSONALIZED\s+PLAN$/i.test(t)) {
-      toRemove.push(el)
-    }
-  })
-  toRemove.forEach(el => el.remove())
-}
+import { strip18DayPlanHeadingNodes } from '@/lib/planHtmlUtils'
+import { sanitizeReportHtmlFragment } from '@/lib/reportHtmlSanitize'
 
 function parsePhases(html: string): { title: string; innerHtml: string }[] {
-  const clean = DOMPurify.sanitize(html, {
-    ALLOWED_TAGS,
-    ALLOWED_ATTR,
-  })
+  const clean = sanitizeReportHtmlFragment(html)
   const doc = new DOMParser().parseFromString(`<div id="plan-root">${clean}</div>`, 'text/html')
   const root = doc.getElementById('plan-root')
   if (!root) return []
 
-  strip18DayNodes(root)
+  strip18DayPlanHeadingNodes(root)
 
   const phases: { title: string; nodes: Element[] }[] = []
   let current: { title: string; nodes: Element[] } = { title: '', nodes: [] }

@@ -162,7 +162,7 @@ Gratitude statement"
 
 ACTIVITY RULE (CRITICAL)
 You MUST ONLY use activities from the provided Zen Garden Excel dataset.
-Each zone has different corners. When choosing activities for a zone, choose equally from all corners.
+Each zone has different corners. When choosing activities for a zone(), choose equally from all corners.
 Each activity must:
 Match the client's pain points
 Be selected using:
@@ -336,9 +336,26 @@ export interface ReportDataParams {
 // Build the user message sent alongside the system prompt
 // ---------------------------------------------------------------------------
 
+/** Full question text per observation key — keep in sync with src/data/clientObservationOptions.ts */
+const CLIENT_OBSERVATION_QUESTION_LABELS: Record<string, string> = {
+  primary_concerns: 'What are your primary concerns or struggles in life?',
+  root_cause: 'What do you feel is the root cause of these concerns?',
+  coping_techniques: 'What are your current coping & mindfulness techniques?',
+  stopping_growth: 'What is stopping you from your growth?',
+  desired_changes: 'What would you like to change or improve in your life right now?',
+  physical_symptoms: 'Physical health symptoms you might be feeling',
+  open_to_healing: 'How open are you towards healing?',
+}
+
 function formatClientObservations(obs: Record<string, unknown>): string {
+  const knownOrder = Object.keys(CLIENT_OBSERVATION_QUESTION_LABELS)
+  const keys = [
+    ...knownOrder.filter(k => Object.prototype.hasOwnProperty.call(obs, k)),
+    ...Object.keys(obs).filter(k => !knownOrder.includes(k)),
+  ]
   const lines: string[] = []
-  for (const [key, value] of Object.entries(obs)) {
+  for (const key of keys) {
+    const value = obs[key]
     if (!value || typeof value !== 'object') continue
     const entry = value as { selected?: string[]; freeText?: string }
     const parts: string[] = []
@@ -349,8 +366,10 @@ function formatClientObservations(obs: Record<string, unknown>): string {
       parts.push(entry.freeText.trim())
     }
     if (parts.length > 0) {
-      const label = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-      lines.push(`- ${label}: ${parts.join(' | ')}`)
+      const question =
+        CLIENT_OBSERVATION_QUESTION_LABELS[key] ??
+        key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+      lines.push(`- Question: ${question} — Response: ${parts.join(' | ')}`)
     }
   }
   return lines.length > 0 ? lines.join('\n') : '(none provided)'

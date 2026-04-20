@@ -7,6 +7,8 @@ import { Card, CardContent } from '@/components/ui/card'
 import { useAuth } from '@/hooks/useAuth'
 import { pageStaggerItemStyle, usePageStaggerVisible } from '@/hooks/usePageStaggerVisible'
 import { supabase } from '@/lib/supabase'
+import { printZenPlanPdf } from '@/lib/zenPrintDocument'
+import { zenPrintPdfMetadata } from '@/lib/zenPrintPayloadHelpers'
 import {
   reportDetailTabButtonClassName,
   reportDetailTabListClassName,
@@ -18,12 +20,15 @@ type ReportData = {
   reportSection: string | null
   ritualSection: string | null
   finalNarrativeSection: string | null
+  planSection: string | null
   content: string | null
+  createdAt: string | null
+  assessment: { score_total?: number | null; score_data?: unknown } | null
 }
 
 export function ClientReportDetailPage() {
   const { reportId } = useParams<{ reportId: string }>()
-  const { user } = useAuth()
+  const { user, profile } = useAuth()
   const [loading, setLoading] = useState(true)
   const [report, setReport] = useState<ReportData | null>(null)
   const [tab, setTab] = useState<Tab>('report')
@@ -38,7 +43,9 @@ export function ClientReportDetailPage() {
 
     let { data, error } = await supabase
       .from('reports')
-      .select('report_section, ritual_section, final_narrative_section, content')
+      .select(
+        'report_section, ritual_section, final_narrative_section, plan_section, content, created_at, assessments ( score_total, score_data )'
+      )
       .eq('id', reportId)
       .eq('client_id', user.id)
       .maybeSingle()
@@ -46,7 +53,7 @@ export function ClientReportDetailPage() {
     if (error) {
       const fallback = await supabase
         .from('reports')
-        .select('report_section, ritual_section, content')
+        .select('report_section, ritual_section, content, created_at')
         .eq('id', reportId)
         .eq('client_id', user.id)
         .maybeSingle()
@@ -59,11 +66,22 @@ export function ClientReportDetailPage() {
       setReport(null)
     } else {
       const row = data as Record<string, unknown>
+      const join = row.assessments as Record<string, unknown> | Record<string, unknown>[] | null | undefined
+      const assessmentRow = Array.isArray(join) ? join[0] : join
       setReport({
         reportSection: (row.report_section as string) || null,
         ritualSection: (row.ritual_section as string) || null,
         finalNarrativeSection: (row.final_narrative_section as string) || null,
+        planSection: (row.plan_section as string) || null,
         content: (row.content as string) || null,
+        createdAt: typeof row.created_at === 'string' ? row.created_at : null,
+        assessment: assessmentRow
+          ? {
+              score_total:
+                typeof assessmentRow.score_total === 'number' ? assessmentRow.score_total : null,
+              score_data: assessmentRow.score_data,
+            }
+          : null,
       })
     }
     setLoading(false)
@@ -74,7 +92,31 @@ export function ClientReportDetailPage() {
   }, [load])
 
   const handlePrintPdf = () => {
-    window.print()
+    if (!report) return
+    const reportContent = report.reportSection || report.content || ''
+    const ritualContent = report.ritualSection || ''
+    const finalContent = report.finalNarrativeSection || ''
+    const planContent = report.planSection || ''
+    const meta = zenPrintPdfMetadata(
+      report.createdAt,
+      profile
+        ? {
+            name: profile.name,
+            first_name: profile.first_name,
+            last_name: profile.last_name,
+            gender: profile.gender,
+            age: profile.age ?? null,
+          }
+        : null,
+      report.assessment
+    )
+    printZenPlanPdf({
+      reportHtml: reportContent,
+      finalNarrativeHtml: finalContent || undefined,
+      ritualHtml: ritualContent || undefined,
+      planHtml: planContent || undefined,
+      ...meta,
+    })
   }
 
   if (loading) {
@@ -106,6 +148,7 @@ export function ClientReportDetailPage() {
   const reportContent = report.reportSection || report.content || ''
   const ritualContent = report.ritualSection || ''
   const finalContent = report.finalNarrativeSection || ''
+  const planSection = report.planSection || ''
 
   return (
     <div className="space-y-6">
@@ -118,7 +161,13 @@ export function ClientReportDetailPage() {
             <ChevronLeft className="mr-1 size-4" /> Back to reports
           </Link>
         </Button>
-        <Button type="button" variant="zenOutline" size="sm" onClick={handlePrintPdf}>
+        <Button
+          type="button"
+          variant="zenOutline"
+          size="sm"
+          onClick={handlePrintPdf}
+          disabled={!reportContent && !ritualContent && !finalContent && !planSection}
+        >
           <Download className="mr-1.5 size-4" aria-hidden />
           Download PDF
         </Button>
@@ -175,39 +224,6 @@ export function ClientReportDetailPage() {
             ))}
         </CardContent>
       </Card>
-
-      {/* Print-only: combined PDF (report + final + ritual) */}
-      <div className="hidden print:block print-root space-y-10 text-black">
-        <header className="border-b border-neutral-300 pb-4">
-          <h1 className="text-2xl font-bold text-neutral-900">Zen Plan Report</h1>
-          <p className="mt-1 text-sm text-neutral-600">Zen Space — confidential</p>
-        </header>
-
-        <section className="space-y-3">
-          <h2 className="text-lg font-bold text-neutral-900">Report</h2>
-          <div className="report-print-html text-sm leading-relaxed text-neutral-800">
-            {reportContent ? <ReportBody content={reportContent} /> : null}
-          </div>
-        </section>
-
-        {finalContent ? (
-          <section className="space-y-3">
-            <h2 className="text-lg font-bold text-neutral-900">Final narrative</h2>
-            <div className="report-print-html text-sm leading-relaxed text-neutral-800">
-              <ReportBody content={finalContent} />
-            </div>
-          </section>
-        ) : null}
-
-        {ritualContent ? (
-          <section className="space-y-3">
-            <h2 className="text-lg font-bold text-neutral-900">Fourfold Zen Ritual</h2>
-            <div className="report-print-html text-sm leading-relaxed text-neutral-800">
-              <ReportBody content={ritualContent} />
-            </div>
-          </section>
-        ) : null}
-      </div>
     </div>
   )
 }

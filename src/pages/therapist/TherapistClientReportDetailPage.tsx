@@ -13,6 +13,8 @@ import {
   type BenchmarkSection,
 } from '@/data/benchmarkAssessment'
 import { supabase } from '@/lib/supabase'
+import { printZenPlanPdf } from '@/lib/zenPrintDocument'
+import { zenPrintPdfMetadata } from '@/lib/zenPrintPayloadHelpers'
 import {
   reportDetailTabButtonClassName,
   reportDetailTabListClassName,
@@ -24,8 +26,19 @@ type ReportData = {
   reportSection: string | null
   ritualSection: string | null
   finalNarrativeSection: string | null
+  planSection: string | null
   content: string | null
   assessmentId: string | null
+  createdAt: string | null
+  assessment: { score_total?: number | null; score_data?: unknown } | null
+}
+
+type ClientPrintProfile = {
+  name?: string | null
+  first_name?: string | null
+  last_name?: string | null
+  gender?: string | null
+  age?: number | null
 }
 
 type AnswerRow = {
@@ -40,6 +53,7 @@ export function TherapistClientReportDetailPage() {
   const [loading, setLoading] = useState(true)
   const [forbidden, setForbidden] = useState(false)
   const [report, setReport] = useState<ReportData | null>(null)
+  const [clientPrintProfile, setClientPrintProfile] = useState<ClientPrintProfile | null>(null)
   const [answersLoading, setAnswersLoading] = useState(false)
   const [answersByQuestionId, setAnswersByQuestionId] = useState<Map<string, AnswerRow>>(new Map())
   const [tab, setTab] = useState<Tab>('report')
@@ -64,13 +78,14 @@ export function TherapistClientReportDetailPage() {
         if (linkErr) console.error('[therapist_clients link]', linkErr)
         setForbidden(true)
         setReport(null)
+        setClientPrintProfile(null)
         return
       }
 
       let { data, error } = await supabase
         .from('reports')
         .select(
-          'report_section, ritual_section, final_narrative_section, content, assessment_id, client_id'
+          'report_section, ritual_section, final_narrative_section, plan_section, content, assessment_id, client_id, created_at, assessments ( score_total, score_data )'
         )
         .eq('id', reportId)
         .eq('client_id', clientId)
@@ -79,7 +94,7 @@ export function TherapistClientReportDetailPage() {
       if (error) {
         const fallback = await supabase
           .from('reports')
-          .select('report_section, ritual_section, content, assessment_id, client_id')
+          .select('report_section, ritual_section, content, assessment_id, client_id, created_at')
           .eq('id', reportId)
           .eq('client_id', clientId)
           .maybeSingle()
@@ -90,15 +105,33 @@ export function TherapistClientReportDetailPage() {
       if (error || !data) {
         if (error) console.error(error)
         setReport(null)
+        setClientPrintProfile(null)
       } else {
         const row = data as Record<string, unknown>
+        const join = row.assessments as Record<string, unknown> | Record<string, unknown>[] | null | undefined
+        const assessmentRow = Array.isArray(join) ? join[0] : join
         setReport({
           reportSection: (row.report_section as string) || null,
           ritualSection: (row.ritual_section as string) || null,
           finalNarrativeSection: (row.final_narrative_section as string) || null,
+          planSection: (row.plan_section as string) || null,
           content: (row.content as string) || null,
           assessmentId: typeof row.assessment_id === 'string' ? row.assessment_id : null,
+          createdAt: typeof row.created_at === 'string' ? row.created_at : null,
+          assessment: assessmentRow
+            ? {
+                score_total:
+                  typeof assessmentRow.score_total === 'number' ? assessmentRow.score_total : null,
+                score_data: assessmentRow.score_data,
+              }
+            : null,
         })
+        const { data: cp } = await supabase
+          .from('profiles')
+          .select('name, first_name, last_name, gender, age')
+          .eq('id', clientId)
+          .maybeSingle()
+        setClientPrintProfile(cp as ClientPrintProfile | null)
       }
     } finally {
       setLoading(false)
@@ -147,10 +180,6 @@ export function TherapistClientReportDetailPage() {
     return order.map(section => ({ section, questions: map.get(section) ?? [] }))
   }, [])
 
-  const handlePrintPdf = () => {
-    window.print()
-  }
-
   const listHref = clientId ? `/app/therapist/clients/${clientId}/reports` : '/app/therapist/clients'
 
   if (loading) {
@@ -193,6 +222,18 @@ export function TherapistClientReportDetailPage() {
   const reportContent = report.reportSection || report.content || ''
   const ritualContent = report.ritualSection || ''
   const finalContent = report.finalNarrativeSection || ''
+  const planSection = report.planSection || ''
+
+  const handlePrintPdf = () => {
+    const meta = zenPrintPdfMetadata(report.createdAt, clientPrintProfile, report.assessment)
+    printZenPlanPdf({
+      reportHtml: reportContent,
+      finalNarrativeHtml: finalContent || undefined,
+      ritualHtml: ritualContent || undefined,
+      planHtml: planSection || undefined,
+      ...meta,
+    })
+  }
 
   return (
     <div className="space-y-6">
@@ -205,7 +246,13 @@ export function TherapistClientReportDetailPage() {
             <ChevronLeft className="mr-1 size-4" /> Back to reports
           </Link>
         </Button>
-        <Button type="button" variant="zenOutline" size="sm" onClick={handlePrintPdf}>
+        <Button
+          type="button"
+          variant="zenOutline"
+          size="sm"
+          onClick={handlePrintPdf}
+          disabled={!reportContent && !ritualContent && !finalContent && !planSection}
+        >
           <Download className="mr-1.5 size-4" aria-hidden />
           Download PDF
         </Button>
@@ -305,70 +352,6 @@ export function TherapistClientReportDetailPage() {
           )}
         </CardContent>
       </Card>
-
-      <div className="hidden print:block print-root space-y-10 text-black">
-        <header className="border-b border-neutral-300 pb-4">
-          <h1 className="text-2xl font-bold text-neutral-900">Zen Plan Report</h1>
-          <p className="mt-1 text-sm text-neutral-600">Zen Space — confidential</p>
-        </header>
-
-        <section className="space-y-3">
-          <h2 className="text-lg font-bold text-neutral-900">Report</h2>
-          <div className="report-print-html text-sm leading-relaxed text-neutral-800">
-            {reportContent ? <ReportBody content={reportContent} /> : null}
-          </div>
-        </section>
-
-        {finalContent ? (
-          <section className="space-y-3">
-            <h2 className="text-lg font-bold text-neutral-900">Final narrative</h2>
-            <div className="report-print-html text-sm leading-relaxed text-neutral-800">
-              <ReportBody content={finalContent} />
-            </div>
-          </section>
-        ) : null}
-
-        {ritualContent ? (
-          <section className="space-y-3">
-            <h2 className="text-lg font-bold text-neutral-900">Fourfold Zen Ritual</h2>
-            <div className="report-print-html text-sm leading-relaxed text-neutral-800">
-              <ReportBody content={ritualContent} />
-            </div>
-          </section>
-        ) : null}
-
-        {report.assessmentId && !answersLoading ? (
-          <section className="space-y-4">
-            <h2 className="text-lg font-bold text-neutral-900">Assessment</h2>
-            <div className="space-y-6 text-sm leading-relaxed text-neutral-800">
-              {groupedQuestions.map(({ section, questions }) =>
-                questions.length === 0 ? null : (
-                  <div key={section}>
-                    <h3 className="mb-2 font-bold text-neutral-900">{section}</h3>
-                    <ul className="list-none space-y-3 pl-0">
-                      {questions.map((q, i) => {
-                        const prev = questions[i - 1]
-                        const showCat = !prev || prev.category !== q.category
-                        const row = answersByQuestionId.get(q.id)
-                        const answerLine = formatBenchmarkAnswerWithScore(row ?? null)
-                        return (
-                          <li key={q.id} className="border-b border-neutral-200 pb-2">
-                            {showCat ? (
-                              <div className="mb-1 text-xs font-semibold uppercase text-neutral-500">{q.category}</div>
-                            ) : null}
-                            {q.text}
-                            <div className="mt-1 font-medium text-neutral-900">{answerLine}</div>
-                          </li>
-                        )
-                      })}
-                    </ul>
-                  </div>
-                )
-              )}
-            </div>
-          </section>
-        ) : null}
-      </div>
     </div>
   )
 }
