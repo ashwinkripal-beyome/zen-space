@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ChevronLeft, Download, Loader2 } from 'lucide-react'
+import { PracticeDisclaimerDialog } from '@/components/PracticeDisclaimerDialog'
 import { ReportBody } from '@/components/ReportBody'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -57,6 +58,7 @@ export function TherapistClientReportDetailPage() {
   const [answersLoading, setAnswersLoading] = useState(false)
   const [answersByQuestionId, setAnswersByQuestionId] = useState<Map<string, AnswerRow>>(new Map())
   const [tab, setTab] = useState<Tab>('report')
+  const [fourfoldDisclaimerOpen, setFourfoldDisclaimerOpen] = useState(false)
   const staggerVisible = usePageStaggerVisible(!loading, `${reportId}-${Boolean(report)}-${forbidden}`)
 
   const load = useCallback(async () => {
@@ -263,8 +265,22 @@ export function TherapistClientReportDetailPage() {
     })
   }
 
+  const openFourfoldTab = () => {
+    setFourfoldDisclaimerOpen(true)
+  }
+
+  const confirmFourfoldTab = () => {
+    setFourfoldDisclaimerOpen(false)
+    setTab('ritual')
+  }
+
   return (
     <div className="space-y-6">
+      <PracticeDisclaimerDialog
+        open={fourfoldDisclaimerOpen}
+        variant="fourfold"
+        onContinue={confirmFourfoldTab}
+      />
       <div
         className="flex flex-wrap items-center justify-between gap-3 print:hidden"
         style={pageStaggerItemStyle(0, staggerVisible)}
@@ -300,7 +316,14 @@ export function TherapistClientReportDetailPage() {
           <button
             key={key}
             type="button"
-            onClick={() => setTab(key)}
+            onClick={() => {
+              if (key === 'ritual') {
+                if (tab === 'ritual') return
+                openFourfoldTab()
+                return
+              }
+              setTab(key)
+            }}
             className={reportDetailTabButtonClassName(tab === key)}
           >
             {label}

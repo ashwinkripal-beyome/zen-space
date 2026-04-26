@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ChevronLeft, Download, Loader2 } from 'lucide-react'
+import { PracticeDisclaimerDialog } from '@/components/PracticeDisclaimerDialog'
 import { ReportBody } from '@/components/ReportBody'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -32,6 +33,7 @@ export function ClientReportDetailPage() {
   const [loading, setLoading] = useState(true)
   const [report, setReport] = useState<ReportData | null>(null)
   const [tab, setTab] = useState<Tab>('report')
+  const [fourfoldDisclaimerOpen, setFourfoldDisclaimerOpen] = useState(false)
   const staggerVisible = usePageStaggerVisible(!loading, `${reportId}-${Boolean(report)}`)
 
   const load = useCallback(async () => {
@@ -150,8 +152,22 @@ export function ClientReportDetailPage() {
   const finalContent = report.finalNarrativeSection || ''
   const planSection = report.planSection || ''
 
+  const openFourfoldTab = () => {
+    setFourfoldDisclaimerOpen(true)
+  }
+
+  const confirmFourfoldTab = () => {
+    setFourfoldDisclaimerOpen(false)
+    setTab('ritual')
+  }
+
   return (
     <div className="space-y-6">
+      <PracticeDisclaimerDialog
+        open={fourfoldDisclaimerOpen}
+        variant="fourfold"
+        onContinue={confirmFourfoldTab}
+      />
       <div
         className="flex flex-wrap items-center justify-between gap-3 print:hidden"
         style={pageStaggerItemStyle(0, staggerVisible)}
@@ -186,7 +202,10 @@ export function ClientReportDetailPage() {
         </button>
         <button
           type="button"
-          onClick={() => setTab('ritual')}
+          onClick={() => {
+            if (tab === 'ritual') return
+            openFourfoldTab()
+          }}
           className={reportDetailTabButtonClassName(tab === 'ritual')}
         >
           Fourfold Zen Ritual

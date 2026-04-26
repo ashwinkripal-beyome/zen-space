@@ -1,15 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CalendarDays, ClipboardPenLine, Download, Loader2 } from 'lucide-react'
+import { CalendarDays, ChevronDown, ClipboardPenLine, Download, Loader2 } from 'lucide-react'
 import { PlanChecklist } from '@/components/PlanChecklist'
 import { PlanTimeline } from '@/components/PlanTimeline'
+import { PracticeDisclaimerDialog } from '@/components/PracticeDisclaimerDialog'
 import { ReportBody } from '@/components/ReportBody'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  reportDetailTabButtonClassName,
-  reportDetailTabListClassName,
-} from '@/components/layout/AppShell'
 import { useAuth } from '@/hooks/useAuth'
 import { useAssessmentAvailability } from '@/hooks/useAssessmentAvailability'
 import { useClientOnboarding } from '@/hooks/useClientOnboarding.tsx'
@@ -18,12 +15,11 @@ import { supabase } from '@/lib/supabase'
 import { isEveryPlanWeekMarkedComplete } from '@/lib/supervisedAssessmentEligibility'
 import { printZenPlanPdf } from '@/lib/zenPrintDocument'
 import { zenPrintPdfMetadata } from '@/lib/zenPrintPayloadHelpers'
+import { cn } from '@/lib/utils'
 
 function formatReassessDate(d: Date): string {
   return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
 }
-
-type PlanPageTab = 'ritual' | 'plan'
 
 export function ClientPlanPage() {
   const { user, profile } = useAuth()
@@ -44,7 +40,12 @@ export function ClientPlanPage() {
   const ritualContent = latestReport?.ritual_section ?? null
   const reportId = latestReport?.id ?? null
   const hasPlanOrRitual = Boolean(planContent || ritualContent)
-  const [tab, setTab] = useState<PlanPageTab>('plan')
+  const [planExpanded, setPlanExpanded] = useState(false)
+  const [planDisclaimerAcked, setPlanDisclaimerAcked] = useState(false)
+  const [planDisclaimerOpen, setPlanDisclaimerOpen] = useState(false)
+  const [ritualExpanded, setRitualExpanded] = useState(false)
+  const [ritualDisclaimerAcked, setRitualDisclaimerAcked] = useState(false)
+  const [ritualDisclaimerOpen, setRitualDisclaimerOpen] = useState(false)
   const [planProgressCompleted, setPlanProgressCompleted] = useState<number[]>([])
   const staggerVisible = usePageStaggerVisible(!loading, hasPlanOrRitual ? 'plan-ritual' : 'empty')
 
@@ -62,13 +63,15 @@ export function ClientPlanPage() {
   )
 
   useEffect(() => {
-    if (!latestReport) return
-    if (planContent && !ritualContent) setTab('plan')
-    else if (!planContent && ritualContent) setTab('ritual')
-  }, [latestReport?.id, planContent, ritualContent])
+    setPlanProgressCompleted([])
+  }, [reportId])
 
   useEffect(() => {
-    setPlanProgressCompleted([])
+    setPlanExpanded(false)
+    setPlanDisclaimerAcked(false)
+    setPlanDisclaimerOpen(false)
+    setRitualExpanded(false)
+    setRitualDisclaimerAcked(false)
   }, [reportId])
 
   const load = useCallback(async () => {
@@ -144,7 +147,7 @@ export function ClientPlanPage() {
     return (
       <div className="flex flex-col items-center justify-center gap-4 py-20 text-muted-foreground">
         <Loader2 className="size-10 animate-spin text-sky-300" aria-hidden />
-        <p>Loading plan…</p>
+        <p>Loading your plan…</p>
       </div>
     )
   }
@@ -185,13 +188,79 @@ export function ClientPlanPage() {
       latestReport.final_narrative_section ||
       latestReport.plan_section)
 
+  const confirmPlanDisclaimer = () => {
+    setPlanDisclaimerOpen(false)
+    setPlanDisclaimerAcked(true)
+    setPlanExpanded(true)
+  }
+
+  const togglePlanSection = () => {
+    if (planExpanded) {
+      setPlanExpanded(false)
+      return
+    }
+    if (!planDisclaimerAcked) {
+      setPlanDisclaimerOpen(true)
+      return
+    }
+    setPlanExpanded(true)
+  }
+
+  const confirmRitualDisclaimer = () => {
+    setRitualDisclaimerOpen(false)
+    setRitualDisclaimerAcked(true)
+    setRitualExpanded(true)
+  }
+
+  const toggleRitualSection = () => {
+    if (ritualExpanded) {
+      setRitualExpanded(false)
+      return
+    }
+    if (!ritualDisclaimerAcked) {
+      setRitualDisclaimerOpen(true)
+      return
+    }
+    setRitualExpanded(true)
+  }
+
+  const ritualEmptyMessage = (
+    <p className="py-4 text-muted-foreground">
+      Ready to begin your wellness journey?
+      <br />
+      <br />
+      Reach out to us at{' '}
+      <a
+        href="tel:+918888888888"
+        className="font-medium text-foreground underline decoration-sky-400/50 underline-offset-2"
+      >
+        +91 8888888888
+      </a>
+      , or visit your nearest Zen Garden with your self-assessment report to unlock your personalised 18-week plan and
+      fourfold Zen ritual.
+      <br />
+      <br />
+      We&apos;d love to hear from you soon.
+    </p>
+  )
+
   return (
     <div className="space-y-6">
+      <PracticeDisclaimerDialog
+        open={planDisclaimerOpen}
+        variant="plan18"
+        onContinue={confirmPlanDisclaimer}
+      />
+      <PracticeDisclaimerDialog
+        open={ritualDisclaimerOpen}
+        variant="fourfold"
+        onContinue={confirmRitualDisclaimer}
+      />
       <div
         className="flex flex-wrap items-start justify-between gap-4 print:hidden"
         style={pageStaggerItemStyle(0, staggerVisible)}
       >
-        <h1 className="text-3xl font-bold text-foreground">18-Week Plan</h1>
+        <h1 className="text-3xl font-bold text-foreground">Your Personalized Plan</h1>
         {canPrintPdf ? (
           <Button
             type="button"
@@ -208,67 +277,75 @@ export function ClientPlanPage() {
 
       {hasPlanOrRitual ? (
         <>
-          <div
-            className={reportDetailTabListClassName}
-            style={pageStaggerItemStyle(1, staggerVisible)}
-          >
-            <button
-              type="button"
-              onClick={() => setTab('ritual')}
-              className={reportDetailTabButtonClassName(tab === 'ritual')}
-            >
-              Fourfold Zen Ritual
-            </button>
-            <button
-              type="button"
-              onClick={() => setTab('plan')}
-              className={reportDetailTabButtonClassName(tab === 'plan')}
-            >
-              18-Week Plan
-            </button>
-          </div>
-
           <Card
             className="zen-glass-card zen-ring-primary ring-0 shadow-none print:hidden"
-            style={pageStaggerItemStyle(2, staggerVisible)}
+            style={pageStaggerItemStyle(1, staggerVisible)}
           >
             <CardContent className="px-3 pt-6 md:px-6">
-              {tab === 'ritual' &&
-                (ritualContent ? (
-                  <ReportBody content={ritualContent} />
-                ) : (
-                  <p className="py-8 text-muted-foreground">
-              Ready to begin your wellness journey?<br /><br />Reach out to us at{' '}
-              <a href="tel:+918888888888" className="font-medium text-foreground underline decoration-sky-400/50 underline-offset-2">
-                +91 8888888888
-              </a>, or visit your nearest Zen Garden with your self-assessment report to unlock your personalised 18-week plan and fourfold Zen ritual.<br /><br />We'd love to hear from you soon.
-              </p>
-                ))}
-              {tab === 'plan' &&
-                (planContent ? (
-                  user?.id && reportId ? (
-                    <PlanChecklist
-                      html={planContent}
-                      userId={user.id}
-                      reportId={reportId}
-                      onProgressChange={onPlanProgressChange}
-                    />
+              <div>
+                <button
+                  type="button"
+                  onClick={toggleRitualSection}
+                  className="flex w-full items-center justify-between gap-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-left transition-colors hover:bg-white/10"
+                  aria-expanded={ritualExpanded}
+                >
+                  <span className="text-base font-semibold text-foreground">Fourfold Zen Ritual</span>
+                  <ChevronDown
+                    className={cn(
+                      'size-5 shrink-0 text-muted-foreground transition-transform',
+                      ritualExpanded && 'rotate-180',
+                    )}
+                    aria-hidden
+                  />
+                </button>
+                <div className={cn('mt-4 px-0.5', !ritualExpanded && 'hidden')} aria-hidden={!ritualExpanded}>
+                  {ritualContent ? <ReportBody content={ritualContent} /> : ritualEmptyMessage}
+                </div>
+              </div>
+
+              <div className="mt-8 border-t border-white/10 pt-6">
+                <button
+                  type="button"
+                  onClick={togglePlanSection}
+                  className="flex w-full items-center justify-between gap-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-left transition-colors hover:bg-white/10"
+                  aria-expanded={planExpanded}
+                >
+                  <span className="text-base font-semibold text-foreground">18-Week Plan</span>
+                  <ChevronDown
+                    className={cn(
+                      'size-5 shrink-0 text-muted-foreground transition-transform',
+                      planExpanded && 'rotate-180',
+                    )}
+                    aria-hidden
+                  />
+                </button>
+                <div className={cn('mt-4', !planExpanded && 'hidden')} aria-hidden={!planExpanded}>
+                  {planContent ? (
+                    user?.id && reportId ? (
+                      <PlanChecklist
+                        html={planContent}
+                        userId={user.id}
+                        reportId={reportId}
+                        onProgressChange={onPlanProgressChange}
+                      />
+                    ) : (
+                      <PlanTimeline html={planContent} />
+                    )
                   ) : (
-                    <PlanTimeline html={planContent} />
-                  )
-                ) : (
-                  <p className="py-8 text-center text-muted-foreground">
-                    Your 18-week timeline will appear here once your therapist adds a plan, or when a
-                    supervised report with a plan is finalized.
-                  </p>
-                ))}
+                    <p className="py-8 text-center text-muted-foreground">
+                      Your 18-week timeline will appear here once your therapist adds a plan, or when a supervised
+                      report with a plan is finalized.
+                    </p>
+                  )}
+                </div>
+              </div>
             </CardContent>
           </Card>
 
           {planContent && hasTherapists === true && allPlanWeeksMarkedComplete ? (
             <Card
               className="zen-glass-card zen-ring-secondary ring-0 shadow-none print:hidden"
-              style={pageStaggerItemStyle(3, staggerVisible)}
+              style={pageStaggerItemStyle(2, staggerVisible)}
             >
               <CardContent className="space-y-4 px-3 py-6 md:px-6">
                 <div className="flex flex-col gap-1">
@@ -328,7 +405,7 @@ export function ClientPlanPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-foreground">
               <CalendarDays className="size-5 text-sky-300" />
-              Your 18-Week Plan
+              Your Personalized Plan
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4 text-muted-foreground">

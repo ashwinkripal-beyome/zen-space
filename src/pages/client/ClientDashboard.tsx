@@ -623,7 +623,7 @@ export function ClientDashboard() {
                         </div>
                         <div className="mt-auto flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                           <Button asChild variant="zenOutline" className="w-full sm:flex-1">
-                            <Link to="/app/client/plan">Open 18-week plan</Link>
+                            <Link to="/app/client/plan">Open your personalized plan</Link>
                           </Button>
                           <Button
                             type="button"

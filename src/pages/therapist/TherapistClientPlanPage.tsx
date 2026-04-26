@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { CalendarDays, Download, Loader2 } from 'lucide-react'
+import { CalendarDays, ChevronDown, Download, Loader2 } from 'lucide-react'
 import { PlanChecklist } from '@/components/PlanChecklist'
 import { PlanTimeline } from '@/components/PlanTimeline'
+import { PracticeDisclaimerDialog } from '@/components/PracticeDisclaimerDialog'
+import { ReportBody } from '@/components/ReportBody'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuth } from '@/hooks/useAuth'
@@ -10,6 +12,7 @@ import { pageStaggerItemStyle, usePageStaggerVisible } from '@/hooks/usePageStag
 import { supabase } from '@/lib/supabase'
 import { printZenPlanPdf } from '@/lib/zenPrintDocument'
 import { zenPrintPdfMetadata } from '@/lib/zenPrintPayloadHelpers'
+import { cn } from '@/lib/utils'
 
 export function TherapistClientPlanPage() {
   const { user } = useAuth()
@@ -35,7 +38,14 @@ export function TherapistClientPlanPage() {
   } | null>(null)
 
   const planContent = latestReport?.plan_section ?? null
+  const ritualContent = latestReport?.ritual_section ?? null
   const reportId = latestReport?.id ?? null
+  const [planExpanded, setPlanExpanded] = useState(false)
+  const [planDisclaimerAcked, setPlanDisclaimerAcked] = useState(false)
+  const [planDisclaimerOpen, setPlanDisclaimerOpen] = useState(false)
+  const [ritualExpanded, setRitualExpanded] = useState(false)
+  const [ritualDisclaimerAcked, setRitualDisclaimerAcked] = useState(false)
+  const [ritualDisclaimerOpen, setRitualDisclaimerOpen] = useState(false)
   const staggerVisible = usePageStaggerVisible(!loading, `${clientId}-${forbidden}-${planContent ? 'plan' : 'empty'}`)
 
   const load = useCallback(async () => {
@@ -125,6 +135,14 @@ export function TherapistClientPlanPage() {
     void load()
   }, [load])
 
+  useEffect(() => {
+    setPlanExpanded(false)
+    setPlanDisclaimerAcked(false)
+    setPlanDisclaimerOpen(false)
+    setRitualExpanded(false)
+    setRitualDisclaimerAcked(false)
+  }, [reportId])
+
   if (!clientId) {
     return null
   }
@@ -173,8 +191,54 @@ export function TherapistClientPlanPage() {
       latestReport.final_narrative_section ||
       latestReport.plan_section)
 
+  const confirmPlanDisclaimer = () => {
+    setPlanDisclaimerOpen(false)
+    setPlanDisclaimerAcked(true)
+    setPlanExpanded(true)
+  }
+
+  const togglePlanSection = () => {
+    if (planExpanded) {
+      setPlanExpanded(false)
+      return
+    }
+    if (!planDisclaimerAcked) {
+      setPlanDisclaimerOpen(true)
+      return
+    }
+    setPlanExpanded(true)
+  }
+
+  const confirmRitualDisclaimer = () => {
+    setRitualDisclaimerOpen(false)
+    setRitualDisclaimerAcked(true)
+    setRitualExpanded(true)
+  }
+
+  const toggleRitualSection = () => {
+    if (ritualExpanded) {
+      setRitualExpanded(false)
+      return
+    }
+    if (!ritualDisclaimerAcked) {
+      setRitualDisclaimerOpen(true)
+      return
+    }
+    setRitualExpanded(true)
+  }
+
   return (
     <div className="space-y-6">
+      <PracticeDisclaimerDialog
+        open={planDisclaimerOpen}
+        variant="plan18"
+        onContinue={confirmPlanDisclaimer}
+      />
+      <PracticeDisclaimerDialog
+        open={ritualDisclaimerOpen}
+        variant="fourfold"
+        onContinue={confirmRitualDisclaimer}
+      />
       <div style={pageStaggerItemStyle(0, staggerVisible)}>
         <Button asChild variant="zenOutline" size="sm">
           <Link to={`/app/therapist/clients/${clientId}`}>← Client</Link>
@@ -185,7 +249,7 @@ export function TherapistClientPlanPage() {
         className="flex flex-wrap items-start justify-between gap-4 print:hidden"
         style={pageStaggerItemStyle(1, staggerVisible)}
       >
-        <h1 className="text-3xl font-bold text-foreground">18-Week Plan</h1>
+        <h1 className="text-3xl font-bold text-foreground">Your Personalized Plan</h1>
         {planContent ? (
           <Button
             type="button"
@@ -207,11 +271,55 @@ export function TherapistClientPlanPage() {
             style={pageStaggerItemStyle(2, staggerVisible)}
           >
             <CardContent className="px-3 pt-6 md:px-6">
-              {reportId ? (
-                <PlanChecklist html={planContent} userId={clientId} reportId={reportId} readOnly />
-              ) : (
-                <PlanTimeline html={planContent} />
-              )}
+              <div>
+                <button
+                  type="button"
+                  onClick={toggleRitualSection}
+                  className="flex w-full items-center justify-between gap-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-left transition-colors hover:bg-white/10"
+                  aria-expanded={ritualExpanded}
+                >
+                  <span className="text-base font-semibold text-foreground">Fourfold Zen Ritual</span>
+                  <ChevronDown
+                    className={cn(
+                      'size-5 shrink-0 text-muted-foreground transition-transform',
+                      ritualExpanded && 'rotate-180',
+                    )}
+                    aria-hidden
+                  />
+                </button>
+                <div className={cn('mt-4 px-0.5', !ritualExpanded && 'hidden')} aria-hidden={!ritualExpanded}>
+                  {ritualContent ? (
+                    <ReportBody content={ritualContent} />
+                  ) : (
+                    <p className="py-4 text-muted-foreground">No fourfold ritual content on this report yet.</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-8 border-t border-white/10 pt-6">
+                <button
+                  type="button"
+                  onClick={togglePlanSection}
+                  className="flex w-full items-center justify-between gap-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-left transition-colors hover:bg-white/10"
+                  aria-expanded={planExpanded}
+                >
+                  <span className="text-base font-semibold text-foreground">18-Week Plan</span>
+                  <ChevronDown
+                    className={cn(
+                      'size-5 shrink-0 text-muted-foreground transition-transform',
+                      planExpanded && 'rotate-180',
+                    )}
+                    aria-hidden
+                  />
+                </button>
+                <div className={cn('mt-4', !planExpanded && 'hidden')} aria-hidden={!planExpanded}>
+                  {reportId ? (
+                    <PlanChecklist html={planContent} userId={clientId} reportId={reportId} readOnly />
+                  ) : (
+                    <PlanTimeline html={planContent} />
+                  )}
+                </div>
+              </div>
             </CardContent>
           </Card>
         </>
@@ -223,7 +331,7 @@ export function TherapistClientPlanPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-foreground">
               <CalendarDays className="size-5 text-sky-300" />
-              18-Week Plan
+              Your Personalized Plan
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4 text-muted-foreground">

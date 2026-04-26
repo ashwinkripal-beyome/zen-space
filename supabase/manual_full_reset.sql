@@ -7,10 +7,12 @@
 
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 
+DROP FUNCTION IF EXISTS public.upsert_company_with_departments(text, text[], uuid);
 DROP FUNCTION IF EXISTS public.join_therapist_session(text);
 DROP FUNCTION IF EXISTS public.join_therapist_session(text, uuid);
 DROP FUNCTION IF EXISTS public.create_therapist_otp_session(uuid, text);
 DROP FUNCTION IF EXISTS public.create_therapist_otp_session(uuid, integer, text);
+DROP FUNCTION IF EXISTS public.create_therapist_otp_session(uuid, integer, text, text, uuid);
 DROP FUNCTION IF EXISTS public.generate_therapist_otp(uuid, text);
 DROP FUNCTION IF EXISTS public.ensure_user_profile();
 DROP FUNCTION IF EXISTS public.is_admin();
@@ -27,6 +29,8 @@ DROP TABLE IF EXISTS public.therapist_session_joins CASCADE;
 DROP TABLE IF EXISTS public.therapist_clients CASCADE;
 DROP TABLE IF EXISTS public.therapist_email_otps CASCADE;
 DROP TABLE IF EXISTS public.therapist_otp_sessions CASCADE;
+DROP TABLE IF EXISTS public.company_departments CASCADE;
+DROP TABLE IF EXISTS public.companies CASCADE;
 DROP TABLE IF EXISTS public.profiles CASCADE;
 
 -- Next: run 20260330220000_zen_space_init.sql

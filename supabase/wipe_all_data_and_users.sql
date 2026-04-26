@@ -31,6 +31,8 @@ TRUNCATE TABLE
   public.therapist_session_joins,
   public.therapist_clients,
   public.therapist_otp_sessions,
+  public.company_departments,
+  public.companies,
   public.profiles
 RESTART IDENTITY CASCADE;
 

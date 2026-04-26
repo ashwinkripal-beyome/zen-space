@@ -74,7 +74,9 @@ export function TherapistHomePage() {
       const [sessionsRes, countRes] = await Promise.all([
         supabase
           .from('therapist_otp_sessions')
-          .select('id, session_name, otp, max_clients, clients_used, expires_at, created_at')
+          .select(
+            'id, session_name, otp, max_clients, clients_used, expires_at, created_at, link_kind, company_id, companies ( name )'
+          )
           .eq('therapist_id', user.id)
           .gt('expires_at', new Date().toISOString())
           .order('created_at', { ascending: false }),
@@ -88,15 +90,32 @@ export function TherapistHomePage() {
         console.error('[therapist_otp_sessions]', sessionsRes.error)
       } else if (sessionsRes.data?.length) {
         setActiveOtpSessions(
-          sessionsRes.data.map(row => ({
-            localId: String(row.id),
-            serverId: String(row.id),
-            name: String(row.session_name),
-            otp: String(row.otp),
-            expiresAt: new Date(String(row.expires_at)).getTime(),
-            clientsUsed: Number(row.clients_used),
-            maxClients: Number(row.max_clients),
-          }))
+          sessionsRes.data.map(row => {
+            const companies = row as {
+              link_kind?: string
+              companies?: { name: string } | { name: string }[] | null
+            }
+            const emb = companies.companies
+            const companyName =
+              emb == null
+                ? null
+                : Array.isArray(emb)
+                  ? emb[0]?.name
+                  : typeof emb === 'object' && 'name' in emb
+                    ? (emb as { name: string }).name
+                    : null
+            return {
+              localId: String(row.id),
+              serverId: String(row.id),
+              name: String(row.session_name),
+              otp: String(row.otp),
+              expiresAt: new Date(String(row.expires_at)).getTime(),
+              clientsUsed: Number(row.clients_used),
+              maxClients: Number(row.max_clients),
+              linkKind: companies.link_kind === 'corporate' ? 'corporate' : 'individual',
+              companyName: companyName != null && String(companyName).trim() ? String(companyName) : null,
+            }
+          })
         )
       } else {
         setActiveOtpSessions([])

@@ -450,7 +450,7 @@ export function TherapistClientDetailPage() {
           <CardHeader className="flex-1">
             <CardTitle className="flex items-center gap-2 text-foreground">
               <CalendarDays className="size-4 text-sky-300" aria-hidden />
-              18-Week Plan
+              Your Personalized Plan
             </CardTitle>
             <CardDescription className="text-muted-foreground">
               {selfAssessmentNeedingPlan
