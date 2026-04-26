@@ -27,6 +27,10 @@ export interface Profile {
   avatar_url?: string
   occupation?: string
   company?: string
+  /** Client: supervised assessments require this (set by any linked therapist, shared across links). */
+  is_paid_customer?: boolean
+  /** Present on rows from `profiles` select; used to detect refetched data. */
+  updated_at?: string
 }
 
 export interface AuthState {
@@ -49,7 +53,7 @@ type AuthContextValue = AuthState & {
   }>
   signOut: () => Promise<void>
   refetchProfile: () => void
-  signInWithMagicLink: (email: string) => Promise<{ error: null | { message: string } }>
+  resetPasswordForEmail: (email: string) => Promise<{ error: null | { message: string } }>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -210,11 +214,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut()
   }, [])
 
-  const signInWithMagicLink = useCallback(async (email: string) => {
-    const redirect = typeof window !== 'undefined' ? `${window.location.origin}/` : undefined
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: redirect },
+  const resetPasswordForEmail = useCallback(async (email: string) => {
+    const redirect =
+      typeof window !== 'undefined' ? `${window.location.origin}/reset-password` : undefined
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: redirect,
     })
     return { error }
   }, [])
@@ -229,10 +233,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signIn,
       signUp,
       signOut,
-      signInWithMagicLink,
+      resetPasswordForEmail,
       refetchProfile,
     }),
-    [state, signIn, signUp, signOut, signInWithMagicLink, refetchProfile]
+    [state, signIn, signUp, signOut, resetPasswordForEmail, refetchProfile]
   )
 
   return createElement(AuthContext.Provider, { value }, children)

@@ -217,9 +217,11 @@ export function ClientReportDetailPage() {
             (ritualContent ? (
               <ReportBody content={ritualContent} />
             ) : (
-              <p className="py-8 text-center text-muted-foreground">
-                No ritual content available. The report may have been generated before section
-                splitting was enabled.
+              <p className="py-8 text-muted-foreground">
+              Ready to begin your wellness journey?<br /><br />Reach out to us at{' '}
+              <a href="tel:+918888888888" className="font-medium text-foreground underline decoration-sky-400/50 underline-offset-2">
+                +91 8888888888
+              </a>, or visit your nearest Zen Garden with your self-assessment report to unlock your personalised 18-week plan and fourfold Zen ritual.<br /><br />We'd love to hear from you soon.
               </p>
             ))}
         </CardContent>

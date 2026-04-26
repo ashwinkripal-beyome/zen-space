@@ -7,6 +7,7 @@ import {
   Stethoscope,
   FileStack,
   CreditCard,
+  KeyRound,
 } from 'lucide-react'
 import {
   AppContentPanel,
@@ -28,6 +29,7 @@ const links = [
   { to: '/app/admin/therapists', label: 'Therapists', icon: Stethoscope },
   { to: '/app/admin/reports', label: 'Reports', icon: FileStack },
   { to: '/app/admin/subscriptions', label: 'Subscriptions', icon: CreditCard },
+  { to: '/app/admin/account', label: 'Account', icon: KeyRound },
 ]
 
 export function AdminLayout() {

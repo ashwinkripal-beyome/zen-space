@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { Bell, Copy, Users } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { Bell, Copy, Loader2, Mail, Phone, UserPlus, Users } from 'lucide-react'
+import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -11,17 +12,15 @@ import {
 import { useAuth } from '@/hooks/useAuth'
 import { useTherapistPendingRealtime } from '@/hooks/useTherapistPendingRealtime'
 import { pageStaggerItemStyle, usePageStaggerVisible } from '@/hooks/usePageStaggerVisible'
-import { formatClientDisplayName } from '@/lib/clientDisplayName'
-import { fetchTherapistPendingSupervisedAssessments } from '@/lib/therapistPendingObservations'
+import {
+  claimUnlinkedSelfLead,
+  fetchTherapistPendingDisplayRows,
+  type TherapistPendingDisplayRow,
+} from '@/lib/therapistPendingObservations'
 import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
 
-type PendingNotificationRow = {
-  assessmentId: string
-  clientId: string
-  clientName: string
-  completedAt: string
-}
+type PendingNotificationRow = TherapistPendingDisplayRow
 
 function formatCompletedDate(iso: string): string {
   try {
@@ -45,11 +44,13 @@ const glassCardPremium = cn(
 
 export function TherapistHomePage() {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const [now, setNow] = useState(() => Date.now())
   const [activeOtpSessions, setActiveOtpSessions] = useState<ActiveOtpSession[]>([])
   const [linkedClientCount, setLinkedClientCount] = useState(0)
   const [pendingItems, setPendingItems] = useState<PendingNotificationRow[]>([])
   const [pendingLoading, setPendingLoading] = useState(true)
+  const [claimingId, setClaimingId] = useState<string | null>(null)
 
   const loadPendingNotifications = useCallback(async (opts?: { silent?: boolean }) => {
     const silent = opts?.silent ?? false
@@ -60,25 +61,8 @@ export function TherapistHomePage() {
     }
     if (!silent) setPendingLoading(true)
     try {
-      const pending = await fetchTherapistPendingSupervisedAssessments(user.id)
-      if (pending.length === 0) {
-        setPendingItems([])
-        return
-      }
-      const uniqueClientIds = [...new Set(pending.map(p => p.clientId))]
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('id, email, name, first_name, last_name')
-        .in('id', uniqueClientIds)
-      const byId = new Map((profiles ?? []).map(p => [p.id, p]))
-      setPendingItems(
-        pending.map(p => ({
-          assessmentId: p.assessmentId,
-          clientId: p.clientId,
-          clientName: formatClientDisplayName(byId.get(p.clientId) ?? undefined),
-          completedAt: p.completedAt,
-        }))
-      )
+      const rows = await fetchTherapistPendingDisplayRows(user.id)
+      setPendingItems(rows)
     } finally {
       if (!silent) setPendingLoading(false)
     }
@@ -216,6 +200,27 @@ export function TherapistHomePage() {
 
   const staggerVisible = usePageStaggerVisible(true)
 
+  const onClaimSelfLead = async (clientId: string) => {
+    setClaimingId(clientId)
+    try {
+      const { error } = await claimUnlinkedSelfLead(clientId)
+      if (error) {
+        const msg = error.message?.toLowerCase() ?? ''
+        if (msg.includes('already_link') || msg.includes('unique')) {
+          toast.error('Another therapist already added this client.')
+        } else {
+          toast.error(error.message)
+        }
+        return
+      }
+      toast.success('Client added to your list.')
+      void loadPendingNotifications({ silent: true })
+      navigate(`/app/therapist/clients/${clientId}`, { replace: false })
+    } finally {
+      setClaimingId(null)
+    }
+  }
+
   const sectionHeadingClass =
     'mb-4 text-sm font-semibold uppercase tracking-[0.2em] text-muted-foreground'
 
@@ -253,7 +258,7 @@ export function TherapistHomePage() {
         <CardHeader className="pb-2">
           <CardTitle className="text-xl text-foreground">Notifications</CardTitle>
           <CardDescription className="text-muted-foreground">
-            Clients whose supervised assessment needs observations or Zen Plan report generation
+            Supervised work for linked clients, plus self-assessments from unlinked clients you can add as a client
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -267,7 +272,7 @@ export function TherapistHomePage() {
                 <Bell className="size-7 text-muted-foreground" aria-hidden />
               </div>
               <p className="max-w-md text-sm text-muted-foreground">
-                All caught up. No supervised assessments are waiting for observations or report generation.
+                All caught up. Nothing in your queue right now.
               </p>
               <Button asChild variant="zenOutline" size="sm">
                 <Link to="/app/therapist/notifications">Open notifications</Link>
@@ -276,35 +281,91 @@ export function TherapistHomePage() {
           ) : (
             <>
               <ul className="grid gap-4 sm:grid-cols-2">
-                {pendingItems.map(item => (
-                  <li key={item.assessmentId}>
-                    <Link
-                      to={`/app/therapist/clients/${item.clientId}/observations`}
-                      className={cn(
-                        'group flex flex-col gap-3 rounded-2xl border border-white/12 bg-white/[0.05] p-5 shadow-sm',
-                        'ring-1 ring-white/5 transition-all',
-                        'hover:border-white/20 hover:bg-white/[0.08] hover:ring-white/15'
-                      )}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-lg font-semibold tracking-tight text-foreground">
-                            {item.clientName}
-                          </p>
-                          <p className="mt-0.5 text-sm text-muted-foreground">
-                            Assessment completed {formatCompletedDate(item.completedAt)}
-                          </p>
+                {pendingItems.map(item => {
+                  const homeCard = cn(
+                    'group flex flex-col gap-3 rounded-2xl border border-white/12 bg-white/[0.05] p-5 shadow-sm',
+                    'ring-1 ring-white/5 transition-all',
+                    'hover:border-white/20 hover:bg-white/[0.08] hover:ring-white/15'
+                  )
+                  if (item.kind === 'supervised') {
+                    return (
+                      <li key={`supervised-${item.assessmentId}`}>
+                        <Link to={`/app/therapist/clients/${item.clientId}/observations`} className={homeCard}>
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-lg font-semibold tracking-tight text-foreground">
+                                {item.clientName}
+                              </p>
+                              <p className="mt-0.5 text-sm text-muted-foreground">
+                                Supervised · completed {formatCompletedDate(item.completedAt)}
+                              </p>
+                            </div>
+                            <Badge
+                              variant="outline"
+                              className="shrink-0 border-sky-400/30 bg-sky-500/12 text-xs text-sky-100"
+                            >
+                              Observations
+                            </Badge>
+                          </div>
+                        </Link>
+                      </li>
+                    )
+                  }
+                  return (
+                    <li key={`self-${item.assessmentId}`}>
+                      <div className={cn(homeCard, 'hover:border-white/12 hover:bg-white/[0.05]')}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-lg font-semibold tracking-tight text-foreground">
+                              {item.clientName}
+                            </p>
+                            <p className="mt-0.5 text-sm text-muted-foreground">
+                              Self assessment · {formatCompletedDate(item.completedAt)}
+                            </p>
+                          </div>
+                          <Badge
+                            variant="outline"
+                            className="shrink-0 border-amber-400/30 bg-amber-500/12 text-xs text-amber-100"
+                          >
+                            New lead
+                          </Badge>
                         </div>
-                        <Badge
-                          variant="outline"
-                          className="shrink-0 border-emerald-400/30 bg-emerald-500/15 text-xs text-emerald-200"
-                        >
-                          Action needed
-                        </Badge>
+                        <div className="flex flex-wrap gap-2 pt-0.5">
+                          {item.email ? (
+                            <Button variant="zenOutline" size="sm" className="h-8 gap-1" asChild>
+                              <a href={`mailto:${item.email}`} onClick={e => e.stopPropagation()}>
+                                <Mail className="size-3.5" aria-hidden />
+                                Email
+                              </a>
+                            </Button>
+                          ) : null}
+                          {item.phone ? (
+                            <Button variant="zenOutline" size="sm" className="h-8 gap-1" asChild>
+                              <a href={`tel:${item.phone}`} onClick={e => e.stopPropagation()}>
+                                <Phone className="size-3.5" aria-hidden />
+                                Call
+                              </a>
+                            </Button>
+                          ) : null}
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="h-8 gap-1"
+                            disabled={claimingId === item.clientId}
+                            onClick={() => void onClaimSelfLead(item.clientId)}
+                          >
+                            {claimingId === item.clientId ? (
+                              <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                            ) : (
+                              <UserPlus className="size-3.5" aria-hidden />
+                            )}
+                            Add client
+                          </Button>
+                        </div>
                       </div>
-                    </Link>
-                  </li>
-                ))}
+                    </li>
+                  )
+                })}
               </ul>
               <div className="flex justify-end">
                 <Button asChild variant="zenOutline" size="sm">

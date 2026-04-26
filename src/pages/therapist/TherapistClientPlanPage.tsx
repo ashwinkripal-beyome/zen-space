@@ -185,7 +185,7 @@ export function TherapistClientPlanPage() {
         className="flex flex-wrap items-start justify-between gap-4 print:hidden"
         style={pageStaggerItemStyle(1, staggerVisible)}
       >
-        <h1 className="text-3xl font-bold text-foreground">18-Day Plan</h1>
+        <h1 className="text-3xl font-bold text-foreground">18-Week Plan</h1>
         {planContent ? (
           <Button
             type="button"
@@ -223,16 +223,16 @@ export function TherapistClientPlanPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-foreground">
               <CalendarDays className="size-5 text-sky-300" />
-              18-Day Plan
+              18-Week Plan
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4 text-muted-foreground">
             <p>
-              This client&apos;s personalized 18-day plan will appear here after a Zen Plan report has been generated
-              from a completed assessment.
+              The 18-week plan is created with the supervised report, or you can generate it for a
+              self-assessment from the client&apos;s profile when a report exists but the plan is still empty.
             </p>
             <Button asChild variant="zenOutline">
-              <Link to={`/app/therapist/clients/${clientId}/observations`}>Observations &amp; generate report</Link>
+              <Link to={`/app/therapist/clients/${clientId}`}>Client profile</Link>
             </Button>
           </CardContent>
         </Card>

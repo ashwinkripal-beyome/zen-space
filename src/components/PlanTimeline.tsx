@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { ReportBody } from '@/components/ReportBody'
 import { ReportHtml } from '@/components/ReportHtml'
-import { strip18DayPlanHeadingNodes } from '@/lib/planHtmlUtils'
+import { strip18WeekPlanHeadingNodes } from '@/lib/planHtmlUtils'
 import { sanitizeReportHtmlFragment } from '@/lib/reportHtmlSanitize'
 
 function parsePhases(html: string): { title: string; innerHtml: string }[] {
@@ -10,7 +10,7 @@ function parsePhases(html: string): { title: string; innerHtml: string }[] {
   const root = doc.getElementById('plan-root')
   if (!root) return []
 
-  strip18DayPlanHeadingNodes(root)
+  strip18WeekPlanHeadingNodes(root)
 
   const phases: { title: string; nodes: Element[] }[] = []
   let current: { title: string; nodes: Element[] } = { title: '', nodes: [] }

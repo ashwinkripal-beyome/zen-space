@@ -456,15 +456,48 @@ export function ClientAssessmentSessionPage() {
       }
       setBooting(true)
       try {
+        if (isSelf) {
+          const { data: prof, error: profErr } = await supabase
+            .from('profiles')
+            .select('is_paid_customer')
+            .eq('id', user.id)
+            .maybeSingle()
+          if (profErr) {
+            console.error('[profiles self gate]', profErr)
+          } else if ((prof as { is_paid_customer?: boolean } | null)?.is_paid_customer) {
+            if (!cancelled) {
+              toast.error(
+                'Self assessment is not available after your therapist has marked you as a paid customer. Use the supervised assessment.'
+              )
+              navigate('/app/client/assessment', { replace: true })
+            }
+            return
+          }
+        }
+
         let therapistId: string | null = null
         if (!isSelf) {
-          const { data: link } = await supabase
-            .from('therapist_clients')
-            .select('therapist_id')
-            .eq('client_id', user.id)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle()
+          const [{ data: paidProf, error: paidErr }, { data: link, error: supLinkErr }] = await Promise.all([
+            supabase.from('profiles').select('is_paid_customer').eq('id', user.id).maybeSingle(),
+            supabase
+              .from('therapist_clients')
+              .select('therapist_id')
+              .eq('client_id', user.id)
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle(),
+          ])
+          if (paidErr) console.error('[profiles supervised gate]', paidErr)
+          if (supLinkErr) console.error('[therapist_clients supervised gate]', supLinkErr)
+          if (!(paidProf as { is_paid_customer?: boolean } | null)?.is_paid_customer) {
+            if (!cancelled) {
+              toast.error(
+                'Supervised assessment is only available when your therapist has marked you as a paid customer. You can use the self assessment until then.'
+              )
+              navigate('/app/client/assessment', { replace: true })
+            }
+            return
+          }
           therapistId = link?.therapist_id ?? null
         }
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
-import { Loader2, Mail, Phone, Sparkles, UserPlus } from 'lucide-react'
+import { ClipboardPenLine, Loader2, Mail, Phone, Sparkles, UserPlus } from 'lucide-react'
 import { AnimatedScoreMeter } from '@/components/AnimatedScoreMeter'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { useAuth } from '@/hooks/useAuth'
+import { useAssessmentAvailability } from '@/hooks/useAssessmentAvailability'
 import { useClientOnboarding } from '@/hooks/useClientOnboarding.tsx'
 import { pageStaggerItemStyle, usePageStaggerVisible } from '@/hooks/usePageStaggerVisible'
 import { extractAffirmationsFromRitual } from '@/lib/extractAffirmationsFromRitual'
@@ -124,6 +125,10 @@ function dayOrderFromParsed(days: ReturnType<typeof parsePlanDays>) {
   return order.sort((a, b) => a - b)
 }
 
+function formatReassessDate(d: Date): string {
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
 function formatActivityTitle(raw: string | null): string | null {
   if (!raw) return null
   const t = raw.replace(/\s+/g, ' ').trim()
@@ -137,6 +142,7 @@ function formatActivityTitle(raw: string | null): string | null {
 export function ClientDashboard() {
   const { profile, user } = useAuth()
   const { therapistSectionLocked, hasTherapists, therapistResolutionPending } = useClientOnboarding()
+  const availability = useAssessmentAvailability()
   const greetingFirst = dashboardGreetingFirstName(profile ?? null)
   const [stripLoading, setStripLoading] = useState(true)
   const [latestReportId, setLatestReportId] = useState<string | null>(null)
@@ -313,10 +319,13 @@ export function ClientDashboard() {
 
   useEffect(() => {
     if (!user?.id || !latestReportId) return
-    const bump = () => setPlanProgressTick(t => t + 1)
+    const bump = () => {
+      setPlanProgressTick(t => t + 1)
+      void availability.refetch()
+    }
     window.addEventListener('focus', bump)
     return () => window.removeEventListener('focus', bump)
-  }, [user?.id, latestReportId])
+  }, [user?.id, latestReportId, availability.refetch])
 
   const ongoing = useMemo(() => {
     if (!user?.id || !latestReportId || !planSection?.trim()) {
@@ -355,6 +364,8 @@ export function ClientDashboard() {
 
   const planTherapistLinked = hasTherapists === true
 
+  const allPlanWeeksMarkedOnDashboard = ongoing.hasPlanDays && ongoing.activeDay === null
+
   const handleConfirmMarkComplete = async () => {
     if (!user?.id || !latestReportId || ongoing.activeDay == null) return
     if (planCompleted.includes(ongoing.activeDay)) return
@@ -373,7 +384,7 @@ export function ClientDashboard() {
 
   const assessmentCard: DashboardNavCard = {
     title: 'Assessments',
-    desc: 'Access reports and 18-day plans by taking a swipe-based assessment.',
+    desc: 'Access reports and 18-week plans by taking a swipe-based assessment.',
     to: '/app/client/assessment',
     label: 'Go to assessments',
     variant: 'zen',
@@ -413,15 +424,15 @@ export function ClientDashboard() {
       <Dialog open={confirmMarkOpen} onOpenChange={setConfirmMarkOpen}>
         <DialogContent className="zen-glass-card rounded-2xl border-white/15 text-foreground ring-0 shadow-none">
           <DialogHeader>
-            <DialogTitle className="text-foreground">Mark today complete?</DialogTitle>
+            <DialogTitle className="text-foreground">Mark this week complete?</DialogTitle>
             <DialogDescription className="text-muted-foreground">
               {ongoing.activeDay != null ? (
                 <>
-                  This will mark <span className="text-foreground/90">Day {ongoing.activeDay}</span> as done
-                  on your 18-day plan. You can still open the plan to review any day.
+                  This will mark <span className="text-foreground/90">Week {ongoing.activeDay}</span> as done
+                  on your 18-week plan. You can still open the plan to review any week.
                 </>
               ) : (
-                'No active day to mark.'
+                'No active week to mark.'
               )}
             </DialogDescription>
           </DialogHeader>
@@ -453,7 +464,7 @@ export function ClientDashboard() {
           {greetingFirst ? `Hi ${greetingFirst}!` : 'Hello,'}
         </h1>
         <p className="mt-2 text-lg text-muted-foreground">
-          Welcome to Zen Space. Your mental wellness journey.
+          Welcome to Zen Space. Your happiness and wellbeing journey.
         </p>
       </div>
 
@@ -588,19 +599,19 @@ export function ClientDashboard() {
                     <CardContent className="flex flex-1 flex-col justify-center gap-3 py-6">
                       <p className="text-pretty leading-relaxed text-muted-foreground">
                         Connect with a Zen Specialist at your nearest Zen Garden to link your account and access your
-                        18-day plan here.
+                        18-week plan here.
                       </p>
                     </CardContent>
                   ) : !ongoing.hasPlanDays ? (
                     <CardContent className="flex flex-1 flex-col justify-center py-6">
                       <p className="text-pretty leading-relaxed text-muted-foreground">
-                        No active plan. Take an assessment to create your 18-day plan.
+                        No active plan. Take an assessment to create your 18-week plan.
                       </p>
                     </CardContent>
                   ) : ongoing.activeDay != null ? (
                     <>
                       <CardHeader className="shrink-0 pb-2">
-                        <CardTitle className="text-xl text-foreground">Day {ongoing.activeDay}</CardTitle>
+                        <CardTitle className="text-xl text-foreground">Week {ongoing.activeDay}</CardTitle>
                       </CardHeader>
                       <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
                         <div className="flex-1">
@@ -612,7 +623,7 @@ export function ClientDashboard() {
                         </div>
                         <div className="mt-auto flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                           <Button asChild variant="zenOutline" className="w-full sm:flex-1">
-                            <Link to="/app/client/plan">Open 18-day plan</Link>
+                            <Link to="/app/client/plan">Open 18-week plan</Link>
                           </Button>
                           <Button
                             type="button"
@@ -635,9 +646,45 @@ export function ClientDashboard() {
                         <p className="flex-1 text-pretty leading-relaxed text-muted-foreground">
                           You&apos;ve marked all days complete for this plan. Nice work.
                         </p>
-                        <Button asChild variant="zenOutline" className="mt-auto w-full">
-                          <Link to="/app/client/plan">Review plan</Link>
-                        </Button>
+                        <div className="mt-auto flex flex-col gap-2">
+                          <Button asChild variant="zenOutline" className="w-full">
+                            <Link to="/app/client/plan">Review plan</Link>
+                          </Button>
+                          {allPlanWeeksMarkedOnDashboard ? (
+                            availability.loading ? (
+                              <p className="text-center text-xs text-muted-foreground">Checking reassessment…</p>
+                            ) : availability.supervised.available ? (
+                              <Button asChild variant="zen" className="w-full gap-2">
+                                <Link to="/app/client/assessment/supervised/session">
+                                  <ClipboardPenLine className="size-4" aria-hidden />
+                                  Reassess supervised assessment
+                                </Link>
+                              </Button>
+                            ) : (
+                              <div className="space-y-2">
+                                <Button type="button" variant="zen" className="w-full gap-2" disabled>
+                                  <ClipboardPenLine className="size-4" aria-hidden />
+                                  Reassess supervised assessment
+                                </Button>
+                                {availability.supervised.supervisedBlockedReason === 'min_weeks' &&
+                                availability.supervised.nextDate ? (
+                                  <p className="text-center text-xs text-muted-foreground">
+                                    Unlocks {formatReassessDate(availability.supervised.nextDate)}.
+                                  </p>
+                                ) : availability.supervised.supervisedBlockedReason === 'not_paid' ? (
+                                  <p className="text-center text-xs text-muted-foreground">
+                                    Your therapist must mark you as a paid customer first. The self assessment is
+                                    available until then.
+                                  </p>
+                                ) : (
+                                  <p className="text-center text-xs text-muted-foreground">
+                                    Not available yet. Your therapist can enable the next assessment if needed.
+                                  </p>
+                                )}
+                              </div>
+                            )
+                          ) : null}
+                        </div>
                       </CardContent>
                     </>
                   )}
@@ -711,7 +758,7 @@ export function ClientDashboard() {
 
               {/*
               <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-                Report + 18-Day Plan tiles — temporarily hidden
+                Report + 18-Week Plan tiles — temporarily hidden
               </div>
               */}
             </>

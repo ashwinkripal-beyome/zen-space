@@ -1,5 +1,5 @@
 import { sanitizeReportHtmlFragment } from '@/lib/reportHtmlSanitize'
-import { strip18DayPlanHeadingNodes } from '@/lib/planHtmlUtils'
+import { strip18WeekPlanHeadingNodes } from '@/lib/planHtmlUtils'
 
 type WellnessKey =
   | 'pain'
@@ -11,7 +11,7 @@ type WellnessKey =
 
 function wellnessKeyFromH2(text: string): WellnessKey | null {
   const t = text.replace(/\s+/g, ' ').trim().toLowerCase()
-  if (/key\s+pain|pain\s+point/.test(t)) return 'pain'
+  if (/key\s+concerns?|key\s+pain|pain\s+point/.test(t)) return 'pain'
   if (t.includes('current state')) return 'current'
   if (t.includes('balance zone')) return 'balance'
   if (t.includes('blossom zone')) return 'blossom'
@@ -29,7 +29,7 @@ function barClassForWellnessKey(key: WellnessKey): 'zen-bar-c4' | 'zen-bar-c1' |
 
 function titleForWellnessKey(key: WellnessKey, original: string): string {
   const map: Record<WellnessKey, string> = {
-    pain: 'Key Pain Points',
+    pain: 'Key Concerns',
     current: 'Current State',
     balance: 'Balance Zone',
     blossom: 'Blossom Zone',
@@ -330,14 +330,14 @@ export function parseFourfoldRitualHtml(html: string): FourfoldParseResult {
   return { html: parts.join('\n') }
 }
 
-/** Plan: phase cards + day headings with colour band by day index */
+/** Plan: phase cards + week headings (or legacy "Day") with colour band by week index 1–18 */
 export function parsePlanHtmlForPrint(raw: string): string {
   const clean = sanitizeReportHtmlFragment(raw)
   if (!clean.trim()) return ''
   const doc = new DOMParser().parseFromString(`<div id="plan-print-root">${clean}</div>`, 'text/html')
   const root = doc.getElementById('plan-print-root')
   if (!root) return clean
-  strip18DayPlanHeadingNodes(root)
+  strip18WeekPlanHeadingNodes(root)
 
   const nodes = Array.from(root.childNodes)
   root.innerHTML = ''
@@ -371,13 +371,13 @@ export function parsePlanHtmlForPrint(raw: string): string {
 
   root.querySelectorAll('h3').forEach(h3 => {
     const t = h3.textContent?.trim() ?? ''
-    const dm = t.match(/^Day\s+(\d+)/i)
+    const dm = t.match(/^(?:Day|Week)\s+(\d+)/i)
     if (dm) {
-      const day = parseInt(dm[1], 10)
+      const week = parseInt(dm[1], 10)
       h3.classList.add('zen-day-heading')
-      if (day >= 1 && day <= 6) h3.classList.add('zen-day-c1')
-      else if (day >= 7 && day <= 12) h3.classList.add('zen-day-c2')
-      else if (day >= 13 && day <= 18) h3.classList.add('zen-day-c3')
+      if (week >= 1 && week <= 6) h3.classList.add('zen-day-c1')
+      else if (week >= 7 && week <= 12) h3.classList.add('zen-day-c2')
+      else if (week >= 13 && week <= 18) h3.classList.add('zen-day-c3')
     } else {
       h3.classList.add('zen-inner-h3')
     }

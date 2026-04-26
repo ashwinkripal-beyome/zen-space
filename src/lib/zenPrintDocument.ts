@@ -13,7 +13,7 @@ export type ZenPlanPrintPayload = {
   finalNarrativeHtml?: string
   /** Fourfold Zen Ritual (HTML fragment) */
   ritualHtml?: string
-  /** 18-day plan (HTML fragment) */
+  /** 18-week plan (HTML fragment) */
   planHtml?: string
   /** Browser tab / PDF metadata title */
   documentTitle?: string
@@ -144,7 +144,7 @@ function buildFullHtmlDocument(payload: ZenPlanPrintPayload): string {
     ? sectionC4('Fourfold Zen Ritual', ritualInner, { breakBefore: true })
     : ''
   const planSection = planInner.trim()
-    ? sectionC4('18-Day Plan', `<div class="zen-prose zen-plan-prose report-html">${planInner}</div>`, {
+    ? sectionC4('18-Week Plan', `<div class="zen-prose zen-plan-prose report-html">${planInner}</div>`, {
         breakBefore: true,
       })
     : ''

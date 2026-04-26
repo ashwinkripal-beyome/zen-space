@@ -1,7 +1,12 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1'
 import {
-  ZEN_REPORT_SYSTEM_PROMPT,
+  ZEN_FOURFOLD_RITUAL_SYSTEM_PROMPT,
+  ZEN_PLAN_18_SYSTEM_PROMPT,
+  ZEN_REPORT_BODY_SYSTEM_PROMPT,
+  assembleSupervisedReportContent,
+  buildPlan18UserMessage,
   buildReportUserMessage,
+  buildRitualUserMessage,
   parseReportSections,
 } from '../_shared/zenReportPrompt.ts'
 
@@ -162,18 +167,18 @@ Deno.serve(async (req: Request) => {
     const blossomScore = typeof zones.blossom?.sum === 'number' ? zones.blossom.sum : 0
     const blissScore = typeof zones.bliss?.sum === 'number' ? zones.bliss.sum : 0
 
-    // Pain points: questions where client scored 2 or 3 (mostly / completely true)
+    // Key concerns: questions where client scored 2 or 3 (mostly / completely true)
     const { data: painPointRows } = await admin
       .from('assessment_answers')
       .select('question_text')
       .eq('assessment_id', assessmentId)
       .in('answer_value', ['2', '3'])
 
-    const painPoints = (painPointRows ?? [])
+    const keyConcerns = (painPointRows ?? [])
       .map(r => (r.question_text as string) || '')
       .filter(Boolean)
 
-    const userMessage = buildReportUserMessage({
+    const reportParams = {
       clientName: displayName,
       age: clientAge,
       gender: profile?.gender as string | null,
@@ -182,14 +187,17 @@ Deno.serve(async (req: Request) => {
       balanceScore,
       blossomScore,
       blissScore,
-      painPoints,
+      keyConcerns,
       clientObservations: (assessment.client_observations || null) as Record<string, unknown> | null,
       therapistObservations: (assessment.therapist_observations || null) as Record<string, unknown> | null,
-    })
+    }
+    const userMessageReport = buildReportUserMessage(reportParams)
+    const userMessagePlan = buildPlan18UserMessage(reportParams)
+    const userMessageRitual = buildRitualUserMessage(reportParams)
 
     const model = Deno.env.get('OPENAI_MODEL') || 'gpt-4o-mini'
 
-    const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+    const openaiReportRes = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${openaiKey}`,
@@ -199,33 +207,108 @@ Deno.serve(async (req: Request) => {
         model,
         temperature: 0.65,
         messages: [
-          { role: 'system', content: ZEN_REPORT_SYSTEM_PROMPT },
-          { role: 'user', content: userMessage },
+          { role: 'system', content: ZEN_REPORT_BODY_SYSTEM_PROMPT },
+          { role: 'user', content: userMessageReport },
         ],
       }),
     })
 
-    if (!openaiRes.ok) {
-      const errText = await openaiRes.text()
-      console.error('OpenAI error', openaiRes.status, errText)
+    if (!openaiReportRes.ok) {
+      const errText = await openaiReportRes.text()
+      console.error('OpenAI report error', openaiReportRes.status, errText)
       const detail = summarizeOpenAiErrorBody(errText)
-      return new Response(JSON.stringify({ error: 'OpenAI request failed', detail }), {
+      return new Response(JSON.stringify({ error: 'OpenAI request failed (report)', detail }), {
         status: 502,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
-    const openaiJson = (await openaiRes.json()) as {
+    const openaiReportJson = (await openaiReportRes.json()) as {
       choices?: { message?: { content?: string } }[]
     }
-    const content = openaiJson.choices?.[0]?.message?.content?.trim()
-    if (!content) {
-      return new Response(JSON.stringify({ error: 'Empty model response' }), {
+    const reportOnlyRaw = openaiReportJson.choices?.[0]?.message?.content?.trim()
+    if (!reportOnlyRaw) {
+      return new Response(JSON.stringify({ error: 'Empty model response (report)' }), {
         status: 502,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
+    const openaiPlanRes = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${openaiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.65,
+        messages: [
+          { role: 'system', content: ZEN_PLAN_18_SYSTEM_PROMPT },
+          { role: 'user', content: userMessagePlan },
+        ],
+      }),
+    })
+
+    if (!openaiPlanRes.ok) {
+      const errText = await openaiPlanRes.text()
+      console.error('OpenAI plan error', openaiPlanRes.status, errText)
+      const detail = summarizeOpenAiErrorBody(errText)
+      return new Response(JSON.stringify({ error: 'OpenAI request failed (18-week plan)', detail }), {
+        status: 502,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    const openaiPlanJson = (await openaiPlanRes.json()) as {
+      choices?: { message?: { content?: string } }[]
+    }
+    const planOnlyRaw = openaiPlanJson.choices?.[0]?.message?.content?.trim()
+    if (!planOnlyRaw) {
+      return new Response(JSON.stringify({ error: 'Empty model response (18-week plan)' }), {
+        status: 502,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    const openaiRitualRes = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${openaiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.65,
+        messages: [
+          { role: 'system', content: ZEN_FOURFOLD_RITUAL_SYSTEM_PROMPT },
+          { role: 'user', content: userMessageRitual },
+        ],
+      }),
+    })
+
+    if (!openaiRitualRes.ok) {
+      const errText = await openaiRitualRes.text()
+      console.error('OpenAI ritual error', openaiRitualRes.status, errText)
+      const detail = summarizeOpenAiErrorBody(errText)
+      return new Response(JSON.stringify({ error: 'OpenAI request failed (Fourfold Zen Ritual)', detail }), {
+        status: 502,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    const openaiRitualJson = (await openaiRitualRes.json()) as {
+      choices?: { message?: { content?: string } }[]
+    }
+    const ritualOnlyRaw = openaiRitualJson.choices?.[0]?.message?.content?.trim()
+    if (!ritualOnlyRaw) {
+      return new Response(JSON.stringify({ error: 'Empty model response (Fourfold Zen Ritual)' }), {
+        status: 502,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    const content = assembleSupervisedReportContent(reportOnlyRaw, ritualOnlyRaw, planOnlyRaw)
     const sections = parseReportSections(content)
 
     const row = {

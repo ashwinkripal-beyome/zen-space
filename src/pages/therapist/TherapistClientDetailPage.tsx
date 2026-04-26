@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { Loader2, Mail, Phone, RefreshCw } from 'lucide-react'
+import { CalendarDays, Loader2, Mail, Phone, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -12,7 +12,13 @@ import {
   formatGenderLabel,
   type ProfileNameFields,
 } from '@/lib/clientDisplayName'
+import { messageFromFunctionInvokeFailure } from '@/lib/functionInvokeError'
 import { supabase } from '@/lib/supabase'
+import {
+  computeSupervisedAssessmentEligibility,
+  therapistSupervisedCooldownLabel,
+  type SupervisedEligibility,
+} from '@/lib/supervisedAssessmentEligibility'
 import { cn } from '@/lib/utils'
 
 const glassReport = cn('zen-glass-card ring-0 shadow-none', 'zen-ring-primary')
@@ -57,6 +63,7 @@ type ClientProfileRow = ProfileNameFields & {
   dob: string | null
   occupation: string | null
   company: string | null
+  is_paid_customer: boolean
 }
 
 export function TherapistClientDetailPage() {
@@ -65,6 +72,7 @@ export function TherapistClientDetailPage() {
   const [loading, setLoading] = useState(true)
   const [forbidden, setForbidden] = useState(false)
   const [profile, setProfile] = useState<ClientProfileRow | null>(null)
+  const [savingPaidCustomer, setSavingPaidCustomer] = useState(false)
 
   const load = useCallback(async () => {
     if (!user?.id || !clientId) {
@@ -96,7 +104,7 @@ export function TherapistClientDetailPage() {
       const { data: prof, error: profErr } = await supabase
         .from('profiles')
         .select(
-          'id, email, name, first_name, last_name, gender, age, phone_number, dob, occupation, company'
+          'id, email, name, first_name, last_name, gender, age, phone_number, dob, occupation, company, is_paid_customer'
         )
         .eq('id', clientId)
         .maybeSingle()
@@ -113,6 +121,7 @@ export function TherapistClientDetailPage() {
       }
 
       const p = prof as Record<string, unknown>
+      const paid = Boolean(p.is_paid_customer)
       setProfile({
         id: String(p.id),
         email: typeof p.email === 'string' ? p.email : '',
@@ -125,6 +134,7 @@ export function TherapistClientDetailPage() {
         dob: typeof p.dob === 'string' ? p.dob : null,
         occupation: typeof p.occupation === 'string' ? p.occupation : null,
         company: typeof p.company === 'string' ? p.company : null,
+        is_paid_customer: paid,
       })
     } finally {
       setLoading(false)
@@ -138,13 +148,59 @@ export function TherapistClientDetailPage() {
   // Assessment override controls
   const [selfLastCompleted, setSelfLastCompleted] = useState<string | null>(null)
   const [supervisedLastCompleted, setSupervisedLastCompleted] = useState<string | null>(null)
-  const [supervisedOverride, setSupervisedOverride] = useState<string | null>(null)
+  const [supervisedEligibility, setSupervisedEligibility] = useState<SupervisedEligibility | null>(null)
   const [enablingSupervised, setEnablingSupervised] = useState(false)
+
+  /** Latest completed self assessment id when its report has no 18-week plan yet (therapist can generate). */
+  const [selfAssessmentNeedingPlan, setSelfAssessmentNeedingPlan] = useState<string | null>(null)
+  const [generatingPlan, setGeneratingPlan] = useState(false)
+
+  const loadPlanCta = useCallback(async () => {
+    if (!clientId) {
+      setSelfAssessmentNeedingPlan(null)
+      return
+    }
+    const { data: selfA, error: selfErr } = await supabase
+      .from('assessments')
+      .select('id')
+      .eq('client_id', clientId)
+      .eq('assessment_mode', 'self')
+      .eq('status', 'completed')
+      .order('completed_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (selfErr) {
+      console.error('[assessments self for plan cta]', selfErr)
+      setSelfAssessmentNeedingPlan(null)
+      return
+    }
+    if (!selfA?.id) {
+      setSelfAssessmentNeedingPlan(null)
+      return
+    }
+    const { data: rep, error: repErr } = await supabase
+      .from('reports')
+      .select('plan_section')
+      .eq('assessment_id', selfA.id)
+      .maybeSingle()
+    if (repErr) {
+      console.error('[reports plan cta]', repErr)
+      setSelfAssessmentNeedingPlan(null)
+      return
+    }
+    if (!rep) {
+      setSelfAssessmentNeedingPlan(null)
+      return
+    }
+    const ps = (rep.plan_section as string) || ''
+    setSelfAssessmentNeedingPlan(ps.trim().length === 0 ? selfA.id : null)
+  }, [clientId])
 
   const loadOverrides = useCallback(async () => {
     if (!user?.id || !clientId) return
 
-    const [selfA, supA, overrides] = await Promise.all([
+    const [selfA, supA, overrideLatest, latestReport] = await Promise.all([
       supabase
         .from('assessments')
         .select('completed_at')
@@ -167,20 +223,79 @@ export function TherapistClientDetailPage() {
         .from('assessment_overrides')
         .select('created_at')
         .eq('client_id', clientId)
-        .eq('therapist_id', user.id)
         .eq('assessment_mode', 'supervised')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from('reports')
+        .select('id, created_at, plan_section')
+        .eq('client_id', clientId)
+        .order('created_at', { ascending: false })
+        .limit(1)
         .maybeSingle(),
     ])
 
     setSelfLastCompleted(selfA.data?.completed_at ?? null)
     setSupervisedLastCompleted(supA.data?.completed_at ?? null)
 
-    setSupervisedOverride(overrides.data?.created_at ?? null)
-  }, [user?.id, clientId])
+    const reportRow = latestReport.data as { id?: string; created_at?: string; plan_section?: string } | null
+    const reportId = reportRow?.id
+    let planCompletedDays: unknown = []
+    if (reportId) {
+      const prog = await supabase
+        .from('report_plan_progress')
+        .select('completed_days')
+        .eq('client_id', clientId)
+        .eq('report_id', reportId)
+        .maybeSingle()
+      planCompletedDays = prog.data?.completed_days ?? []
+    }
+
+    setSupervisedEligibility(
+      computeSupervisedAssessmentEligibility({
+        isPaidCustomer: profile?.is_paid_customer === true,
+        supervisedCompletedAt: supA.data?.completed_at,
+        supervisedOverrideCreatedAt: overrideLatest.data?.created_at ?? null,
+        latestReportId: reportId ?? null,
+        latestReportCreatedAt: reportRow?.created_at ?? null,
+        planSectionHtml: reportRow?.plan_section ?? null,
+        planCompletedDays,
+      })
+    )
+  }, [user?.id, clientId, profile?.is_paid_customer])
 
   useEffect(() => {
     if (profile) void loadOverrides()
   }, [profile, loadOverrides])
+
+  useEffect(() => {
+    if (profile) void loadPlanCta()
+  }, [profile, loadPlanCta])
+
+  const handleGenerate18WeekPlanForSelf = async () => {
+    if (!selfAssessmentNeedingPlan) return
+    setGeneratingPlan(true)
+    try {
+      const { data, error, response: fnResponse } = await supabase.functions.invoke('generate-zen-plan', {
+        body: { assessment_id: selfAssessmentNeedingPlan },
+      })
+      if (error) {
+        const msg = await messageFromFunctionInvokeFailure(error, fnResponse)
+        toast.error(msg)
+        return
+      }
+      if (data && typeof data === 'object' && 'error' in data && (data as { error?: string }).error) {
+        const err = (data as { error?: string }).error
+        toast.error(typeof err === 'string' ? err : 'Plan generation failed')
+        return
+      }
+      toast.success('18-week plan generated')
+      setSelfAssessmentNeedingPlan(null)
+    } finally {
+      setGeneratingPlan(false)
+    }
+  }
 
   const handleEnableSupervisedAssessment = async () => {
     if (!user?.id || !clientId) return
@@ -205,23 +320,25 @@ export function TherapistClientDetailPage() {
     setEnablingSupervised(false)
   }
 
-  function assessmentCooldownLabel(completedAt: string | null, overrideAt: string | null): string {
-    if (!completedAt) return 'No assessment taken yet'
-    const completed = new Date(completedAt)
-    const next = new Date(completed.getTime() + 30 * 24 * 60 * 60 * 1000)
-    const now = new Date()
-    if (now >= next) return 'Available (cooldown passed)'
-    if (overrideAt && new Date(overrideAt) > completed) return 'Available (you enabled it)'
-    return `On cooldown until ${next.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`
-  }
-
-  function isOnCooldown(completedAt: string | null, overrideAt: string | null): boolean {
-    if (!completedAt) return false
-    const completed = new Date(completedAt)
-    const next = new Date(completed.getTime() + 30 * 24 * 60 * 60 * 1000)
-    if (new Date() >= next) return false
-    if (overrideAt && new Date(overrideAt) > completed) return false
-    return true
+  const handleSetPaidCustomer = async (paid: boolean) => {
+    if (!clientId) return
+    setSavingPaidCustomer(true)
+    const { error } = await supabase.rpc('set_client_is_paid_customer', {
+      p_client_id: clientId,
+      p_is_paid: paid,
+    })
+    if (error) {
+      toast.error(error.message)
+    } else {
+      setProfile(p => (p ? { ...p, is_paid_customer: paid } : p))
+      toast.success(
+        paid
+          ? 'This client is marked as a paid customer (visible to all linked therapists)'
+          : 'Paid customer status removed (visible to all linked therapists)'
+      )
+      void loadOverrides()
+    }
+    setSavingPaidCustomer(false)
   }
 
   const primaryLabel = formatClientDisplayName(profile ?? undefined)
@@ -331,10 +448,35 @@ export function TherapistClientDetailPage() {
         </Card>
         <Card className={cn(glassPlan, 'h-full')} style={pageStaggerItemStyle(3, staggerVisible)}>
           <CardHeader className="flex-1">
-            <CardTitle className="text-foreground">18-Day Plan</CardTitle>
-            <CardDescription className="text-muted-foreground">Plan progress</CardDescription>
+            <CardTitle className="flex items-center gap-2 text-foreground">
+              <CalendarDays className="size-4 text-sky-300" aria-hidden />
+              18-Week Plan
+            </CardTitle>
+            <CardDescription className="text-muted-foreground">
+              {selfAssessmentNeedingPlan
+                ? 'This client has a self-assessment report but no 18-week plan yet. You can generate it here.'
+                : 'Plan progress and daily activities'}
+            </CardDescription>
           </CardHeader>
-          <CardContent className="mt-auto pt-0">
+          <CardContent className="mt-auto flex flex-col gap-2 pt-0 sm:flex-row sm:flex-wrap">
+            {selfAssessmentNeedingPlan ? (
+              <Button
+                type="button"
+                variant="zen"
+                className="w-full sm:w-auto"
+                disabled={generatingPlan}
+                onClick={() => void handleGenerate18WeekPlanForSelf()}
+              >
+                {generatingPlan ? (
+                  <>
+                    <Loader2 className="mr-1.5 size-4 animate-spin" aria-hidden />
+                    Generating…
+                  </>
+                ) : (
+                  'Generate 18-week plan'
+                )}
+              </Button>
+            ) : null}
             <Button asChild variant="zenOutline" className="w-full sm:w-auto">
               <Link to={`/app/therapist/clients/${clientId}/plan`}>Open plan</Link>
             </Button>
@@ -359,11 +501,37 @@ export function TherapistClientDetailPage() {
         <CardHeader>
           <CardTitle className="text-foreground">Assessment Controls</CardTitle>
           <CardDescription className="text-muted-foreground">
-            Self assessment is one-time on the client app and isn&apos;t available after a supervised assessment.
-            You can enable supervised assessment early if the 30-day cooldown still applies.
+            Mark paid customers to enable supervised assessments on the client app. Self assessment is one-time and
+            stays available for linked clients until you mark them as paid. You can unlock the next supervised
+            reassessment early if the plan-completion and 16-week gate is not met yet.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="flex flex-col gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-medium text-foreground">Paid customer</p>
+              <p className="text-xs text-muted-foreground">
+                Mark this client as a paid customer to enable supervised assessments.
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={profile.is_paid_customer ? 'zenOutline' : 'zen'}
+                disabled={savingPaidCustomer}
+                onClick={() => void handleSetPaidCustomer(!profile.is_paid_customer)}
+              >
+                {savingPaidCustomer ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : profile.is_paid_customer ? (
+                  'Mark as unpaid customer'
+                ) : (
+                  'Mark as paid customer'
+                )}
+              </Button>
+            </div>
+          </div>
           <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
             <p className="text-sm font-medium text-foreground">Self Assessment</p>
             <p className="text-xs text-muted-foreground">
@@ -371,24 +539,35 @@ export function TherapistClientDetailPage() {
                 ? 'Completed — self assessment is one-time only.'
                 : supervisedLastCompleted
                   ? "Not available — self assessment isn't offered after a supervised assessment."
-                  : 'The client can start a self assessment from their app until they have a completed self or supervised assessment.'}
+                  : supervisedEligibility?.blockedReason === 'not_paid'
+                    ? 'Until you mark this client as a paid customer, they can start the one-time self assessment from the app. After you mark them as paid, they should use supervised assessments.'
+                    : 'The client can start a self assessment from their app until they have a completed self or supervised assessment.'}
             </p>
           </div>
           <div className="flex items-center justify-between gap-4 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
             <div>
               <p className="text-sm font-medium text-foreground">Supervised Assessment</p>
-              <p className="text-xs text-muted-foreground">{assessmentCooldownLabel(supervisedLastCompleted, supervisedOverride)}</p>
+              <p className="text-xs text-muted-foreground">
+                {supervisedEligibility
+                  ? therapistSupervisedCooldownLabel(supervisedEligibility)
+                  : supervisedLastCompleted
+                    ? 'Loading gate status…'
+                    : 'Loading…'}
+              </p>
             </div>
-            {isOnCooldown(supervisedLastCompleted, supervisedOverride) && (
-              <Button
-                size="sm"
-                variant="zenOutline"
-                disabled={enablingSupervised}
-                onClick={() => void handleEnableSupervisedAssessment()}
-              >
-                {enablingSupervised ? <RefreshCw className="size-3.5 animate-spin" /> : 'Enable'}
-              </Button>
-            )}
+            {supervisedLastCompleted &&
+              supervisedEligibility &&
+              !supervisedEligibility.available &&
+              supervisedEligibility.blockedReason !== 'not_paid' && (
+                <Button
+                  size="sm"
+                  variant="zenOutline"
+                  disabled={enablingSupervised}
+                  onClick={() => void handleEnableSupervisedAssessment()}
+                >
+                  {enablingSupervised ? <RefreshCw className="size-3.5 animate-spin" /> : 'Enable'}
+                </Button>
+              )}
           </div>
         </CardContent>
       </Card>

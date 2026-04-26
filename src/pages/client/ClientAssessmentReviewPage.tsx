@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
   BENCHMARK_QUESTIONS,
@@ -10,6 +11,7 @@ import {
 import { useAuth } from '@/hooks/useAuth'
 import { pageStaggerItemStyle, usePageStaggerVisible } from '@/hooks/usePageStaggerVisible'
 import { fetchClientBenchmarkDraftForReview } from '@/lib/clientBenchmarkDraft'
+import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
 
 type AssessmentMode = 'supervised' | 'self'
@@ -44,6 +46,42 @@ export function ClientAssessmentReviewPage() {
         setHasDraft(false)
         setAnswers({})
         return
+      }
+      if (isSelf) {
+        const { data: prof, error: profErr } = await supabase
+          .from('profiles')
+          .select('is_paid_customer')
+          .eq('id', user.id)
+          .maybeSingle()
+        if (cancelled) return
+        if (profErr) {
+          console.error('[profiles self gate review]', profErr)
+        } else if ((prof as { is_paid_customer?: boolean } | null)?.is_paid_customer) {
+          toast.error(
+            'Self assessment is not available after your therapist has marked you as a paid customer. Use the supervised assessment.'
+          )
+          setLoading(false)
+          navigate('/app/client/assessment', { replace: true })
+          return
+        }
+      }
+      if (!isSelf) {
+        const { data: paidProf, error: paidErr } = await supabase
+          .from('profiles')
+          .select('is_paid_customer')
+          .eq('id', user.id)
+          .maybeSingle()
+        if (cancelled) return
+        if (paidErr) {
+          console.error('[profiles supervised gate review]', paidErr)
+        } else if (!(paidProf as { is_paid_customer?: boolean } | null)?.is_paid_customer) {
+          toast.error(
+            'Supervised assessment is only available when your therapist has marked you as a paid customer.'
+          )
+          setLoading(false)
+          navigate('/app/client/assessment', { replace: true })
+          return
+        }
       }
       setLoading(true)
       const draft = await fetchClientBenchmarkDraftForReview(user.id, mode)

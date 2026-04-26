@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useLayoutEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -7,9 +7,11 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { CLIENT_GENDER_OPTIONS } from '@/data/clientProfileOptions'
+import { ChangePasswordCard } from '@/components/ChangePasswordCard'
 import { useAuth } from '@/hooks/useAuth'
 import { pageStaggerItemStyle, usePageStaggerVisible } from '@/hooks/usePageStaggerVisible'
 import { isClientProfileComplete } from '@/lib/clientProfileComplete'
+import { dobSelectPartsFromProfile, genderValueForSelect, profileFormSyncKey } from '@/lib/profileFormValues'
 import { supabase } from '@/lib/supabase'
 
 const MONTHS = [
@@ -37,38 +39,48 @@ const MAX_YEAR = currentYear - 13
 export function ClientProfilePage() {
   const navigate = useNavigate()
   const { user, profile, refetchProfile } = useAuth()
-  const [firstName, setFirstName] = useState('')
-  const [lastName, setLastName] = useState('')
-  const [gender, setGender] = useState('')
-  const [dobDay, setDobDay] = useState('')
-  const [dobMonth, setDobMonth] = useState('')
-  const [dobYear, setDobYear] = useState('')
-  const [phone, setPhone] = useState('')
-  const [occupation, setOccupation] = useState('')
-  const [company, setCompany] = useState('')
+  const [firstName, setFirstName] = useState(() => profile?.first_name ?? '')
+  const [lastName, setLastName] = useState(() => profile?.last_name ?? '')
+  const [gender, setGender] = useState(() => (profile ? genderValueForSelect(profile.gender) : ''))
+  const [dobDay, setDobDay] = useState(() => {
+    if (!profile) return ''
+    return dobSelectPartsFromProfile(profile.dob, profile.age)?.day ?? ''
+  })
+  const [dobMonth, setDobMonth] = useState(() => {
+    if (!profile) return ''
+    return dobSelectPartsFromProfile(profile.dob, profile.age)?.month ?? ''
+  })
+  const [dobYear, setDobYear] = useState(() => {
+    if (!profile) return ''
+    return dobSelectPartsFromProfile(profile.dob, profile.age)?.year ?? ''
+  })
+  const [phone, setPhone] = useState(() => profile?.phone_number ?? '')
+  const [occupation, setOccupation] = useState(() => profile?.occupation ?? '')
+  const [company, setCompany] = useState(() => profile?.company ?? '')
   const [saving, setSaving] = useState(false)
   const staggerVisible = usePageStaggerVisible(true)
 
-  useEffect(() => {
+  const profileSync = profileFormSyncKey(profile)
+  useLayoutEffect(() => {
     if (!profile) return
     setFirstName(profile.first_name ?? '')
     setLastName(profile.last_name ?? '')
-    setGender(profile.gender ?? '')
+    setGender(genderValueForSelect(profile.gender))
     setPhone(profile.phone_number ?? '')
     setOccupation(profile.occupation ?? '')
     setCompany(profile.company ?? '')
 
-    if (profile.dob) {
-      const [y, m, d] = profile.dob.split('-')
-      setDobYear(y ?? '')
-      setDobMonth(String(parseInt(m, 10) || ''))
-      setDobDay(String(parseInt(d, 10) || ''))
-    } else if (profile.age != null && Number.isFinite(profile.age)) {
-      setDobYear(String(currentYear - profile.age))
-      setDobMonth('1')
-      setDobDay('1')
+    const dobParts = dobSelectPartsFromProfile(profile.dob, profile.age)
+    if (dobParts) {
+      setDobYear(dobParts.year)
+      setDobMonth(dobParts.month)
+      setDobDay(dobParts.day)
+    } else {
+      setDobYear('')
+      setDobMonth('')
+      setDobDay('')
     }
-  }, [profile])
+  }, [profileSync, profile])
 
   const maxDays = daysInMonth(Number(dobMonth), Number(dobYear))
 
@@ -133,26 +145,27 @@ export function ClientProfilePage() {
   }
 
   return (
-    <form onSubmit={handleSave} className="space-y-6">
-      <div
-        className="flex flex-wrap items-start justify-between gap-4"
-        style={pageStaggerItemStyle(0, staggerVisible)}
-      >
-        <h1 className="text-3xl font-bold text-foreground">Profile</h1>
-        <Button
-          type="submit"
-          disabled={saving}
-          variant="zen"
-          className="shrink-0"
+    <div className="space-y-6">
+      <form onSubmit={handleSave} className="space-y-6">
+        <div
+          className="flex flex-wrap items-start justify-between gap-4"
+          style={pageStaggerItemStyle(0, staggerVisible)}
         >
-          {saving ? 'Saving…' : 'Save'}
-        </Button>
-      </div>
+          <h1 className="text-3xl font-bold text-foreground">Profile</h1>
+          <Button
+            type="submit"
+            disabled={saving}
+            variant="zen"
+            className="shrink-0"
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </Button>
+        </div>
 
-      <Card
-        className="zen-glass-card zen-ring-primary ring-0 shadow-none"
-        style={pageStaggerItemStyle(1, staggerVisible)}
-      >
+        <Card
+          className="zen-glass-card zen-ring-primary ring-0 shadow-none"
+          style={pageStaggerItemStyle(1, staggerVisible)}
+        >
         <CardHeader>
           <CardTitle>Your details</CardTitle>
         </CardHeader>
@@ -273,7 +286,10 @@ export function ClientProfilePage() {
 
           </div>
         </CardContent>
-      </Card>
-    </form>
+        </Card>
+      </form>
+
+      <ChangePasswordCard style={pageStaggerItemStyle(2, staggerVisible)} />
+    </div>
   )
 }

@@ -14,13 +14,21 @@ type PlanChecklistProps = {
   reportId: string
   /** Therapist (or other) view: show client progress without editing. */
   readOnly?: boolean
+  /** Fires after load and whenever the client saves progress (for parent CTAs). */
+  onProgressChange?: (completed: number[]) => void
 }
 
 function rowKey(phaseIndex: number, dayIndex: number) {
   return `${phaseIndex}-${dayIndex}`
 }
 
-export function PlanChecklist({ html, userId, reportId, readOnly = false }: PlanChecklistProps) {
+export function PlanChecklist({
+  html,
+  userId,
+  reportId,
+  readOnly = false,
+  onProgressChange,
+}: PlanChecklistProps) {
   const phases = useMemo(() => parsePlanPhases(html), [html])
   const days = useMemo(() => phases.flatMap(p => p.days), [phases])
 
@@ -47,7 +55,10 @@ export function PlanChecklist({ html, userId, reportId, readOnly = false }: Plan
     void (async () => {
       try {
         const { completed: c } = await fetchReportPlanProgress(userId, reportId)
-        if (!cancelled) setCompleted(c)
+        if (!cancelled) {
+          setCompleted(c)
+          onProgressChange?.(c)
+        }
       } catch (e) {
         if (!cancelled) {
           setCompleted([])
@@ -67,11 +78,12 @@ export function PlanChecklist({ html, userId, reportId, readOnly = false }: Plan
       try {
         await saveReportPlanProgress(userId, reportId, next)
         setCompleted(next)
+        onProgressChange?.(next)
       } catch (e) {
         toast.error(e instanceof Error ? e.message : 'Could not save progress')
       }
     },
-    [reportId, userId]
+    [onProgressChange, reportId, userId]
   )
 
   const activeDay = useMemo(
@@ -173,7 +185,7 @@ export function PlanChecklist({ html, userId, reportId, readOnly = false }: Plan
                             </span>
                             <span className="min-w-0 flex-1 pr-1 md:pr-0">
                               <span className="block text-sm font-medium text-foreground/95">
-                                Day {block.day}
+                                Week {block.day}
                               </span>
                               <span className="mt-0.5 block text-sm text-muted-foreground">
                                 <span className="text-muted-foreground">Activities: </span>

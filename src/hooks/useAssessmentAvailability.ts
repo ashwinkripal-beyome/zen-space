@@ -1,23 +1,29 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { supabase } from '@/lib/supabase'
-
-const COOLDOWN_DAYS = 30
+import {
+  computeSupervisedAssessmentEligibility,
+  type SupervisedBlockedReason,
+} from '@/lib/supervisedAssessmentEligibility'
 
 export type SelfUnavailableReason = 'already_completed' | 'supervised_first'
 
 interface ModeStatus {
   available: boolean
-  /** If on cooldown, the date when it becomes available again */
+  /** If gated, when supervised becomes available (min-weeks gate only). */
   nextDate: Date | null
   loading: boolean
   /** Self only: why the self assessment is not available (no cooldown for self). */
   selfUnavailableReason?: SelfUnavailableReason
+  /** Supervised only: why reassessment is blocked when not available. */
+  supervisedBlockedReason?: SupervisedBlockedReason
 }
 
 export interface AssessmentAvailability {
   self: ModeStatus
   supervised: ModeStatus
+  /** True when the client profile is marked as a paid customer (required for supervised). */
+  isPaidForSupervised: boolean
   loading: boolean
   refetch: () => void
 }
@@ -25,17 +31,24 @@ export interface AssessmentAvailability {
 export function useAssessmentAvailability(): AssessmentAvailability {
   const { user } = useAuth()
   const [selfStatus, setSelfStatus] = useState<ModeStatus>({ available: true, nextDate: null, loading: true })
-  const [supervisedStatus, setSupervisedStatus] = useState<ModeStatus>({ available: true, nextDate: null, loading: true })
+  const [supervisedStatus, setSupervisedStatus] = useState<ModeStatus>({
+    available: true,
+    nextDate: null,
+    loading: true,
+  })
+  const [isPaidForSupervised, setIsPaidForSupervised] = useState(false)
   const [loading, setLoading] = useState(true)
 
   const fetch = useCallback(async () => {
     if (!user?.id) {
+      setIsPaidForSupervised(false)
       setLoading(false)
       return
     }
     setLoading(true)
 
-    const [selfResult, supervisedResult, overridesResult] = await Promise.all([
+    const [selfResult, supervisedResult, overridesResult, latestReportResult, clientProfileResult] =
+      await Promise.all([
       supabase
         .from('assessments')
         .select('completed_at')
@@ -62,15 +75,53 @@ export function useAssessmentAvailability(): AssessmentAvailability {
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle(),
+      supabase
+        .from('reports')
+        .select('id, created_at, plan_section')
+        .eq('client_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase.from('profiles').select('is_paid_customer').eq('id', user.id).maybeSingle(),
     ])
 
-    const supervisedOverrideCreatedAt = overridesResult.data?.created_at
+    const paid = (clientProfileResult.data as { is_paid_customer?: boolean } | null)?.is_paid_customer === true
+    setIsPaidForSupervised(paid)
 
+    const supervisedOverrideCreatedAt = overridesResult.data?.created_at ?? null
     const selfCompletedAt = selfResult.data?.completed_at
     const supervisedCompletedAt = supervisedResult.data?.completed_at
 
+    let planCompletedDays: unknown = []
+    const reportRow = latestReportResult.data as { id?: string; created_at?: string; plan_section?: string } | null
+    const reportId = reportRow?.id
+    if (reportId) {
+      const prog = await supabase
+        .from('report_plan_progress')
+        .select('completed_days')
+        .eq('client_id', user.id)
+        .eq('report_id', reportId)
+        .maybeSingle()
+      planCompletedDays = prog.data?.completed_days ?? []
+    }
+
+    const elig = computeSupervisedAssessmentEligibility({
+      isPaidCustomer: paid,
+      supervisedCompletedAt,
+      supervisedOverrideCreatedAt,
+      latestReportId: reportId ?? null,
+      latestReportCreatedAt: reportRow?.created_at ?? null,
+      planSectionHtml: reportRow?.plan_section ?? null,
+      planCompletedDays,
+    })
+
     setSelfStatus(computeSelfStatus(selfCompletedAt, supervisedCompletedAt))
-    setSupervisedStatus(computeStatus(supervisedCompletedAt, supervisedOverrideCreatedAt))
+    setSupervisedStatus({
+      available: elig.available,
+      nextDate: elig.nextDate,
+      loading: false,
+      supervisedBlockedReason: elig.available ? undefined : elig.blockedReason ?? undefined,
+    })
     setLoading(false)
   }, [user?.id])
 
@@ -81,6 +132,7 @@ export function useAssessmentAvailability(): AssessmentAvailability {
   return {
     self: selfStatus,
     supervised: supervisedStatus,
+    isPaidForSupervised,
     loading,
     refetch: fetch,
   }
@@ -108,30 +160,4 @@ function computeSelfStatus(
     }
   }
   return { available: true, nextDate: null, loading: false }
-}
-
-function computeStatus(
-  completedAt: string | null | undefined,
-  overrideCreatedAt: string | null | undefined
-): ModeStatus {
-  if (!completedAt) {
-    return { available: true, nextDate: null, loading: false }
-  }
-
-  const completed = new Date(completedAt)
-  const nextDate = new Date(completed.getTime() + COOLDOWN_DAYS * 24 * 60 * 60 * 1000)
-  const now = new Date()
-
-  if (now >= nextDate) {
-    return { available: true, nextDate: null, loading: false }
-  }
-
-  if (overrideCreatedAt) {
-    const override = new Date(overrideCreatedAt)
-    if (override > completed) {
-      return { available: true, nextDate: null, loading: false }
-    }
-  }
-
-  return { available: false, nextDate, loading: false }
 }

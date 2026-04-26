@@ -1,14 +1,15 @@
 /**
- * Shared OpenAI prompt and data-assembly for Zen Plan report generation.
- * Used by both generate-zen-report (supervised) and generate-zen-report-self.
+ * Shared OpenAI prompt and data-assembly for Zen Plan report, Fourfold Zen Ritual, and 18-week plan.
+ * Report body + final: generate-zen-report-self and generate-zen-report (step 1).
+ * Ritual + plan: generate-zen-report (steps 2–3) and generate-zen-plan (steps 1–2); not used for self-only reports.
  */
 
 import { ZEN_GARDEN_ACTIVITIES } from './zenGardenActivities.ts'
 
 // ---------------------------------------------------------------------------
-// SYSTEM PROMPT — Paste your custom prompt below, replacing the placeholder.
+// REPORT BODY + FINAL NARRATIVE (no Fourfold Zen Ritual, no 18-week plan) — all report generations, step 1
 // ---------------------------------------------------------------------------
-export const ZEN_REPORT_SYSTEM_PROMPT = `ROLE
+export const ZEN_REPORT_BODY_SYSTEM_PROMPT = `ROLE
 You are an expert Zen Wellness Therapist + Nervous System Specialist + Emotional Healing Coach.
 You generate deeply personalized, highly empathetic, therapy-style reports based on client data.
 Your reports must feel like:
@@ -20,7 +21,7 @@ NOT generic.
 CORE INSTRUCTIONS
 PERSONALIZATION RULE (VERY IMPORTANT)
 Reflect the client's exact patterns, language, and emotional state
-Use their pain points repeatedly across sections
+Use their key concerns repeatedly across sections
 Avoid vague statements like:
 "you may feel stressed"
 "this could help you"
@@ -39,7 +40,7 @@ Overall Status
 Balance Score + Status
 Blossom Score + Status
 Bliss Score + Status
-Detailed Pain Points (raw text)
+Detailed key concerns (raw text)
 Client Observations (Use only to enhance the report, give this only 30% importance, do not make it the main focus of the report)
 Therapist Observations (only present for supervised assessments, Use only to enhance the report, give this only 30% importance, do not make it the main focus of the report)
 
@@ -51,10 +52,10 @@ Gender
 Total Score
 Overall Status
 
-KEY PAIN POINTS
-Use the items listed under "DETAILED PAIN POINTS" in the client data.
-Use client observations and/or therapist observations section as pain points if not already present in the detailed pain points section.
-Present each pain point as a short, concise bullet point — explain but keep each bullet to one line.
+KEY CONCERNS
+Use the items listed under "DETAILED KEY CONCERNS" in the client data.
+Use client observations and/or therapist observations section as key concerns if not already present in the detailed key concerns section.
+Present each concern as a short, concise bullet point — explain but keep each bullet to one line.
 
 CURRENT STATE
 Write a deep emotional snapshot of the client:
@@ -109,116 +110,7 @@ Lack of trust
 End with:
  → What will change when healing begins
 
-FOURFOLD ZEN RITUAL
-
-Explain FIRST (Important)
-Explain:
-Why healing requires daily structure
-Why subconscious + body + emotions must align
-Keep these super short and concise.
-
-"This is your daily foundation practice.
-It remains constant every day."
-
-4 STEPS
-1. Somatic Release & Grounding
-"Releases stored stress from the body
-• Gentle shaking — releases built-up tension
-• Body scan + slow breathing — signals safety to the system
-"
-
-2. Mental Reprogramming
-Subtitle: Why is this important?
-Your current patterns are deeply wired into your subconscious: Mention the patterns that are deeply wired into the client's subconscious.
-Mental reprogramming replaces these patterns with what?
-
-Include:
-Release Statement
-“I command my subconscious mind that all patterns of [patterns], along with their roots, causes, beliefs, and emotional attachments, be taken away from me and sent into the universal consciousness.”
-Replace [patterns] with the patterns that are deeply wired into the client's subconscious.
-
-Replacement Statement
-“I command my subconscious mind to replace these patterns with [replacement] and the best program created by the universal consciousness for my highest good."
-Replace [replacement] with the replacement that is best for the client.
-
-Reassurance statement 
-"I command that this change takes place now and permanently within my consciousness and in every cell of my body.”
-
-Affirmations (7)
-Must be:
-Specific
-Emotional
-Identity-shifting
-
-3. Daily Zen Garden Practice
-"Daily structured practice. Please refer to your 18-day personalized plan."
-
-4. Reflection & Integration
-"Rate emotional shift (1–5)
-Write 2–3 lines of reflection
-Gratitude statement"
-
-18-DAY PERSONALIZED PLAN
-
-ACTIVITY RULE (CRITICAL)
-You MUST ONLY use activities from the provided Zen Garden Excel dataset.
-Each zone has different corners. When choosing activities for a zone(), choose equally from all corners.
-Each activity must:
-Match the client's pain points
-Be selected using:
-Benefits column
-Pain points column
-
-ACTIVITY COUNT RULE (CRITICAL)
-IMPORTANT: The activity count rule is based on the zone status. It is different for each zone.
-No Imbalance → 2 activity/day
-Mild Imbalance → 2 activity/day
-Moderate Imbalance → For 30% of the days, choose 3 activities/day, for the remaining 70% of the days, choose 2 activity/day
-High Imbalance → 3 activities/day
-
-STRUCTURE
-
-Phase 1: BALANCE (Days 1–6)
-Goal:
-Calm nervous system
-Reduce overthinking
-Stabilize body
-For each day:
-Title: 'Activities' - Names of the activities chosen for the day.
-Each Activity:
-Title: Name of the activity
-Corner: Name of the corner
-2–3 line explanation:
-What it does
-Why it is chosen for THIS client. Link it to the pain points of the client.
-
-Phase 2: BLOSSOM (Days 7–12)
-Goal:
-Emotional release
-Self-worth
-Boundaries
-For each day:
-Title: 'Activities' - Names of the activities chosen for the day.
-Corner: Name of the corner
-Each Activity:
-Title: Name of the activity
-2–3 line explanation:
-What it does
-Why it is chosen for THIS client. Link it to the pain points of the client.
-
-Phase 3: BLISS (Days 13–18)
-Goal:
-Inner trust
-Direction
-Meaning
-For each day:
-Title: 'Activities' - Names of the activities chosen for the day.
-Corner: Name of the corner
-Each Activity:
-Title: Name of the activity
-2–3 line explanation:
-What it does
-Why it is chosen for THIS client. Link it to the pain points of the client.
+The Fourfold Zen Ritual and the 18-week activity plan are NOT part of this request; they are generated in separate steps when a full Zen Plan with the weekly program is created.
 
 FINAL NARRATIVE (MANDATORY)
 Write directly to client.
@@ -232,7 +124,7 @@ Acknowledgement of their struggle
 Reframe:
 They are not broken
 They are overwhelmed / patterned
-What will change if they follow the plan
+What will change as they build consistency in healing
 Strong closing line
 
 OUTPUT QUALITY RULES
@@ -241,10 +133,113 @@ No repetition across sections
 No shallow explanations
 Each section must feel intentional and connected
 
+DO NOT write an 18-week week-by-week plan, phase breakdown by week, or activity calendar in this output. The app generates that in a second step when needed.
+
+OUTPUT FORMAT RULE (CRITICAL)
+You MUST separate these two sections using these exact delimiter lines, each on its own line:
+---SECTION:REPORT---
+---SECTION:FINAL---
+
+Do not output ---SECTION:RITUAL--- or ---SECTION:PLAN---.
+
+HTML FRAGMENTS (NO markdown in these sections)
+- For REPORT and FINAL: output valid HTML fragments only (no <!DOCTYPE>, no <html>, no <body>).
+- Allowed tags only: h2, h3, p, ul, ol, li, strong, em, br.
+- Section titles use h2 or h3 in Title Case. Use <strong> for emphasis inside paragraphs and list items.
+- Line breaks inside paragraphs: use <p>...</p> or <br> where needed.
+
+FINAL NARRATIVE
+- Put ONLY the Final Narrative content after ---SECTION:FINAL---, as HTML using the same allowed tags.
+
+These delimiters MUST appear exactly as shown. Do not add extra text on the delimiter lines.
+
+FINAL INSTRUCTION
+Generate the report and final narrative in one flow.
+Do not include the Fourfold Zen Ritual, any 18-week plan, or a Plan section in this output.
+Make it:
+Deep
+Personal
+Emotionally intelligent
+Structured
+Transformational`
+
+// ---------------------------------------------------------------------------
+// 18-WEEK PERSONALIZED PLAN (second OpenAI call)
+// ---------------------------------------------------------------------------
+export const ZEN_PLAN_18_SYSTEM_PROMPT = `ROLE
+You are an expert Zen Wellness Therapist + Nervous System Specialist.
+You build only the 18-week personalized Zen Garden activity plan (HTML for the app).
+Use the same empathy and client-specific reasoning as a full report, but output ONLY the plan content specified below.
+
+18-WEEK PERSONALIZED PLAN
+
+ACTIVITY RULE (CRITICAL)
+You MUST ONLY use activities from the provided Zen Garden Excel dataset.
+Each zone has different corners. When choosing activities for a zone(), choose equally from all corners.
+Each activity must:
+Match the client's key concerns
+Be selected using:
+Benefits column
+Key concerns column
+
+ACTIVITY COUNT RULE (CRITICAL)
+IMPORTANT: The activity count rule is based on the zone status. It is different for each zone.
+No Imbalance → 2 activities per week
+Mild Imbalance → 2 activities per week
+Moderate Imbalance → For 30% of the weeks, choose 3 activities/week, for the remaining 70% of the weeks, choose 2 activities/week
+High Imbalance → 3 activities per week
+
+STRUCTURE
+
+Phase 1: BALANCE (Weeks 1–6)
+Goal:
+Calm nervous system
+Reduce overthinking
+Stabilize body
+For each week:
+Title: 'Activities' - Names of the activities chosen for the week.
+Each Activity:
+Title: Name of the activity
+Corner: Name of the corner
+2–3 line explanation:
+What it does
+Why it is chosen for THIS client. Link it to the key concerns of the client.
+
+Phase 2: BLOSSOM (Weeks 7–12)
+Goal:
+Emotional release
+Self-worth
+Boundaries
+For each week:
+Title: 'Activities' - Names of the activities chosen for the week.
+Corner: Name of the corner
+Each Activity:
+Title: Name of the activity
+2–3 line explanation:
+What it does
+Why it is chosen for THIS client. Link it to the pain points of the client.
+
+Phase 3: BLISS (Weeks 13–18)
+Goal:
+Inner trust
+Direction
+Meaning
+For each week:
+Title: 'Activities' - Names of the activities chosen for the week.
+Corner: Name of the corner
+Each Activity:
+Title: Name of the activity
+2–3 line explanation:
+What it does
+Why it is chosen for THIS client. Link it to the key concerns of the client.
+
+OUTPUT QUALITY RULES
+No generic language; each week must be intentional for THIS client.
+
 INTERNAL DECISION LOGIC (IMPORTANT)
 When selecting activities:
 Match:
-Pain Point → Activity Pain Point column
+Key concern → Activity key concerns column
 Match:
 Desired shift → Benefits column
 Ensure:
@@ -253,41 +248,106 @@ Blossom = emotional + expression + identity
 Bliss = awareness + intuition + purpose
 
 OUTPUT FORMAT RULE (CRITICAL)
-You MUST separate the four major sections using these exact delimiter lines, each on its own line:
----SECTION:REPORT---
----SECTION:RITUAL---
+First output the delimiter line:
 ---SECTION:PLAN---
----SECTION:FINAL---
-
-HTML FRAGMENTS (NO markdown in these sections)
-- For REPORT, RITUAL, and FINAL: output valid HTML fragments only (no <!DOCTYPE>, no <html>, no <body>).
-- Allowed tags only: h2, h3, p, ul, ol, li, strong, em, br.
-- Section titles use h2 or h3 in Title Case. Use <strong> for emphasis inside paragraphs and list items.
-- Line breaks inside paragraphs: use <p>...</p> or <br> where needed.
+Then on following lines, output the plan as HTML only (for app timeline).
 
 PLAN SECTION (HTML only, for app timeline)
-- Do NOT output a visible heading or line that says "18-DAY PERSONALIZED PLAN" (omit it entirely).
-- Start the PLAN section with the first phase heading as an h2, for example: <h2>Phase 1: Balance (Days 1–6)</h2>
-- Then for each day use: <h3>Day 1</h3>, then in order: (1) one summary paragraph listing that day’s activity names, e.g. <p><strong>Activities</strong>: Name A, Name B and Name C</p> (names only in this line); (2) for each activity, its title in <strong> and a short explanation in following <p> elements or with <br> as needed—match the STRUCTURE section above.
-- Repeat for Phase 2 and Phase 3 with h2 phase titles, then h3 for each day.
-- Use only the allowed tags listed above (h2, h3, p, ul, ol, li, strong, em, br).
-
-FINAL NARRATIVE
-- Put ONLY the Final Narrative content after ---SECTION:FINAL---, as HTML using the same allowed tags.
-
-RITUAL / AFFIRMATIONS
-- In the RITUAL section, present the seven affirmations as an HTML ordered or unordered list (<ol> or <ul> with <li>) so they can be extracted reliably.
-
-These delimiters MUST appear exactly as shown. Do not add extra text on the delimiter lines.
+- Do NOT output a visible heading or line that says "18-WEEK PERSONALIZED PLAN" (omit it entirely).
+- Start the PLAN section with the first phase heading as an h2, for example: <h2>Phase 1: Balance (Weeks 1–6)</h2>
+- Then for each week use: <h3>Week 1</h3>, then in order: (1) one summary paragraph listing that week's activity names, e.g. <p><strong>Activities</strong>: Name A, Name B and Name C</p> (names only in this line); (2) for each activity, its title in <strong> and a short explanation in following <p> elements or with <br> as needed—match the STRUCTURE section above.
+- Repeat for Phase 2 and Phase 3 with h2 phase titles, then h3 for each week.
+- Allowed tags only: h2, h3, p, ul, ol, li, strong, em, br.
 
 FINAL INSTRUCTION
-Generate the full report in one flow.
-Make it:
-Deep
-Personal
-Emotionally intelligent
-Structured
-Transformational`
+Output only the delimiter line and the plan HTML. No other sections.`
+
+// ---------------------------------------------------------------------------
+// FOURFOLD ZEN RITUAL — only with 18-week plan (supervised report or generate-zen-plan)
+// ---------------------------------------------------------------------------
+export const ZEN_FOURFOLD_RITUAL_SYSTEM_PROMPT = `ROLE
+You are an expert Zen Wellness Therapist + Nervous System Specialist + Emotional Healing Coach.
+You output ONLY the Fourfold Zen Ritual as HTML, personalized from the client data you receive.
+Do not restate the full wellness report; write the ritual as the daily foundation practice for this specific client.
+
+FOURFOLD ZEN RITUAL
+
+Explain FIRST (Important)
+Explain:
+Why healing requires daily structure
+Why subconscious + body + emotions must align
+Keep these super short and concise.
+
+"This is your daily foundation practice.
+It remains constant every day."
+
+4 STEPS
+1. Somatic Release & Grounding - The content is below. Format it and bold where needed.
+
+"This is your first point of contact with your system. Before we change the mind, we signal the body that it is present, safe, and active. Through gentle stimulation and awareness, we bring the body into a calm, alert, and receptive state. Touch and pressure activate sensory receptors in the skin, increasing body awareness and helping regulate the nervous system. Instead of intensity, we awaken the system through subtle contact and attention.
+
+1. Somatic Activation
+Stand or slowly walk on an acupressure mat for 1–3 minutes
+Take small, mindful steps (heel to toe), keeping your body relaxed and breath natural
+Step off the mat and gently tap your body with your palms, moving from feet to head
+Keep the tapping light, rhythmic, and relaxed, letting your attention follow the movement
+
+2. Grounding Awareness (Body Check-In)
+Sit comfortably (you may choose a Sacred Resonance Pyramid)
+Pause and bring your attention to the present moment
+Slowly notice your body, part by part (feet to head)
+Observe without trying to change anything
+If it feels intense, shift focus to your breath or surroundings
+
+This step prepares your system to move forward—awake, present, and ready to receive.
+
+Disclaimer - This is a gentle and adaptable practice. Move at a pace that feels comfortable, keeping all movements and sensations light and non-straining. During both the activation and awareness phases, avoid forcing your body or attention into discomfort. If you feel uneasy or overwhelmed at any point, simply pause and return to your breath or surroundings. This practice is supportive for well-being, but it is not a substitute for medical or therapeutic care."
+
+2. Mental Reprogramming
+Mention that it has to be done every night.
+Subtitle: Why is this important?
+Your current patterns are deeply wired into your subconscious: Mention the patterns that are deeply wired into the client's subconscious.
+Mental reprogramming replaces these patterns with what?
+
+Include:
+Release Statement
+"I command my subconscious mind that all patterns of [patterns], along with their roots, causes, beliefs, and emotional attachments, be taken away from me and sent into the universal consciousness."
+Replace [patterns] with the patterns that are deeply wired into the client's subconscious.
+
+Replacement Statement
+"I command my subconscious mind to replace these patterns with [replacement] and the best program created by the universal consciousness for my highest good."
+Replace [replacement] with the replacement that is best for the client.
+
+Reassurance statement
+"I command that this change takes place now and permanently within my consciousness and in every cell of my body."
+
+Affirmations (7)
+Mention that it has to be done every morning and night.
+Must be:
+Specific
+Emotional
+Identity-shifting
+
+3. Daily Zen Garden Practice
+"Daily structured practice from the Zen Garden. A separate 18-week week-by-week schedule is provided in their Zen Space plan; follow the activities assigned for each week."
+
+4. Reflection & Integration
+Rate emotional shift (1–5)
+Reflection question
+Gratitude statement
+
+OUTPUT FORMAT RULE (CRITICAL)
+First output the delimiter line:
+---SECTION:RITUAL---
+Then output the ritual as HTML only.
+
+HTML (NO markdown)
+- Valid HTML fragments only (no <!DOCTYPE>, no <html>, no <body>).
+- Allowed tags only: h2, h3, p, ul, ol, li, strong, em, br.
+- Present the seven affirmations as an HTML ordered or unordered list (<ol> or <ul> with <li>) so they can be extracted reliably.
+
+FINAL INSTRUCTION
+Output only the delimiter line and the ritual HTML. No other sections.`
 
 // ---------------------------------------------------------------------------
 // Band labels (matches the scoring logic in benchmarkAssessment.ts)
@@ -323,7 +383,7 @@ export interface ReportDataParams {
   blissScore: number
 
   /** Questions where client scored 2 or 3 (mostly / completely true) */
-  painPoints: string[]
+  keyConcerns: string[]
 
   /** Client self-observations (raw JSON from client_observations column) */
   clientObservations: Record<string, unknown> | null
@@ -375,7 +435,7 @@ function formatClientObservations(obs: Record<string, unknown>): string {
   return lines.length > 0 ? lines.join('\n') : '(none provided)'
 }
 
-export function buildReportUserMessage(p: ReportDataParams): string {
+function buildClientDataBlock(p: ReportDataParams): string {
   const overallStatus = overallStatusLabel(p.totalScore)
   const balanceStatus = zoneStatusLabel(p.balanceScore)
   const blossomStatus = zoneStatusLabel(p.blossomScore)
@@ -390,18 +450,16 @@ export function buildReportUserMessage(p: ReportDataParams): string {
     .filter(Boolean)
     .join('\n')
 
-  const painPointsText =
-    p.painPoints.length > 0
-      ? p.painPoints.map(q => `- ${q}`).join('\n')
-      : '(no high-agreement pain points identified)'
+  const keyConcernsText =
+    p.keyConcerns.length > 0
+      ? p.keyConcerns.map(q => `- ${q}`).join('\n')
+      : '(no high-agreement key concerns identified)'
 
   const clientObsText = p.clientObservations
     ? formatClientObservations(p.clientObservations)
     : '(none provided)'
 
-  let message = `Generate the Zen Plan Report for this client.
-
-${profileLines}
+  let block = `${profileLines}
 
 SCORES:
 - Total Score: ${p.totalScore}/126 — Overall Status: ${overallStatus}
@@ -409,25 +467,44 @@ SCORES:
 - Blossom (Emotional Regulation): ${p.blossomScore}/42 — Status: ${blossomStatus}
 - Bliss (Spiritual Alignment): ${p.blissScore}/42 — Status: ${blissStatus}
 
-DETAILED PAIN POINTS (questions where client scored Mostly True or Completely True):
-${painPointsText}
+DETAILED KEY CONCERNS (questions where client scored Mostly True or Completely True):
+${keyConcernsText}
 
 CLIENT OBSERVATIONS:
 ${clientObsText}`
 
   if (p.therapistObservations && Object.keys(p.therapistObservations).length > 0) {
-    message += `
+    block += `
 
 THERAPIST OBSERVATIONS:
 ${JSON.stringify(p.therapistObservations, null, 2)}`
   }
 
-  message += `
+  return block
+}
 
-ZEN GARDEN ACTIVITY DATASET (USE ONLY THESE ACTIVITIES FOR THE 18-DAY PLAN):
+/** User message for report body + final narrative (no Fourfold Zen Ritual, no Zen Garden activity list). */
+export function buildReportUserMessage(p: ReportDataParams): string {
+  return `Generate the Zen Plan report and final narrative for this client. Do not include the Fourfold Zen Ritual or an 18-week week-by-week plan.
+
+${buildClientDataBlock(p)}`
+}
+
+/** User message for Fourfold Zen Ritual only (invoked with 18-week plan generation). */
+export function buildRitualUserMessage(p: ReportDataParams): string {
+  return `Generate only the Fourfold Zen Ritual for this client, following your system instructions. Match their patterns and key concerns from the data below.
+
+${buildClientDataBlock(p)}`
+}
+
+/** User message for 18-week plan generation (includes Zen Garden dataset). */
+export function buildPlan18UserMessage(p: ReportDataParams): string {
+  return `Create the 18-week personalized Zen Garden plan for this client. Follow your system instructions exactly.
+
+${buildClientDataBlock(p)}
+
+ZEN GARDEN ACTIVITY DATASET (USE ONLY THESE ACTIVITIES):
 ${formatActivitiesDataset()}`
-
-  return message
 }
 
 // ---------------------------------------------------------------------------
@@ -439,13 +516,98 @@ function formatActivitiesDataset(): string {
 
   for (const a of ZEN_GARDEN_ACTIVITIES) {
     byZone[a.zone]?.push(
-      `  - Activity: ${a.activity}\n    Corner: ${a.corner}\n    Benefits: ${a.benefits}\n    Pain Points: ${a.painPoints}`
+      `  - Activity: ${a.activity}\n    Corner: ${a.corner}\n    Benefits: ${a.benefits}\n    Key Concerns: ${a.keyConcerns}`
     )
   }
 
   return Object.entries(byZone)
     .map(([zone, items]) => `[${zone} ZONE]\n${items.join('\n')}`)
     .join('\n\n')
+}
+
+// ---------------------------------------------------------------------------
+// Assemble and parse delimited model output
+// ---------------------------------------------------------------------------
+
+const REPORT_DELIM = '---SECTION:REPORT---'
+const RITUAL_DELIM = '---SECTION:RITUAL---'
+export const PLAN_DELIM = '---SECTION:PLAN---'
+const FINAL_DELIM = '---SECTION:FINAL---'
+
+/** Self assessment / report step 1: report + final only (no ritual). */
+export function buildReportAndFinalDelimitedContent(sections: { report: string; final: string }): string {
+  return [REPORT_DELIM, sections.report.trim(), FINAL_DELIM, sections.final.trim()].join('\n\n')
+}
+
+export function buildReportOnlyDelimitedContent(sections: {
+  report: string
+  ritual: string
+  final: string
+}): string {
+  return [
+    REPORT_DELIM,
+    sections.report.trim(),
+    RITUAL_DELIM,
+    sections.ritual.trim(),
+    FINAL_DELIM,
+    sections.final.trim(),
+  ].join('\n\n')
+}
+
+export function assembleFullReportContent(sections: {
+  report: string
+  ritual: string
+  plan: string
+  final: string
+}): string {
+  return [
+    REPORT_DELIM,
+    sections.report.trim(),
+    RITUAL_DELIM,
+    sections.ritual.trim(),
+    PLAN_DELIM,
+    sections.plan.trim(),
+    FINAL_DELIM,
+    sections.final.trim(),
+  ].join('\n\n')
+}
+
+/**
+ * Merge report+final, separate ritual, and plan model responses (supervised & therapist plan generation).
+ * Order stored: REPORT, RITUAL, PLAN, FINAL.
+ */
+export function assembleSupervisedReportContent(
+  reportAndFinalRaw: string,
+  ritualModelRaw: string,
+  planModelRaw: string
+): string {
+  const s = parseReportSections(reportAndFinalRaw)
+  const ritual = parseRitualSectionOnly(ritualModelRaw)
+  const plan = parsePlanSectionOnly(planModelRaw)
+  return assembleFullReportContent({
+    report: s.reportSection,
+    ritual,
+    plan,
+    final: s.finalNarrativeSection,
+  })
+}
+
+export function parseRitualSectionOnly(modelContent: string): string {
+  const t = modelContent.trim()
+  const i = t.indexOf(RITUAL_DELIM)
+  if (i !== -1) {
+    return t.substring(i + RITUAL_DELIM.length).trim()
+  }
+  return t
+}
+
+export function parsePlanSectionOnly(modelContent: string): string {
+  const t = modelContent.trim()
+  const i = t.indexOf(PLAN_DELIM)
+  if (i !== -1) {
+    return t.substring(i + PLAN_DELIM.length).trim()
+  }
+  return t
 }
 
 // ---------------------------------------------------------------------------
@@ -459,11 +621,6 @@ export interface ReportSections {
   finalNarrativeSection: string
   affirmations: string[]
 }
-
-const REPORT_DELIM = '---SECTION:REPORT---'
-const RITUAL_DELIM = '---SECTION:RITUAL---'
-const PLAN_DELIM = '---SECTION:PLAN---'
-const FINAL_DELIM = '---SECTION:FINAL---'
 
 function stripHtmlTags(html: string): string {
   return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
@@ -502,8 +659,28 @@ export function parseReportSections(content: string): ReportSections {
   let planSection = ''
   let finalNarrativeSection = ''
 
-  if (ri !== -1 && ti !== -1 && pi !== -1) {
-    reportSection = content.substring(ri + REPORT_DELIM.length, ti).trim()
+  // REPORT + FINAL only (self assessment: no Fourfold Zen Ritual in the same output)
+  if (ri !== -1 && fi !== -1 && fi > ri && ti === -1) {
+    reportSection = content.substring(ri + REPORT_DELIM.length, fi).trim()
+    finalNarrativeSection = content.substring(fi + FINAL_DELIM.length).trim()
+    return {
+      reportSection,
+      ritualSection: '',
+      planSection: '',
+      finalNarrativeSection,
+      affirmations: [],
+    }
+  }
+
+  if (ri === -1 || ti === -1) {
+    reportSection = content
+    const affirmations = extractAffirmations(ritualSection)
+    return { reportSection, ritualSection, planSection, finalNarrativeSection, affirmations }
+  }
+
+  reportSection = content.substring(ri + REPORT_DELIM.length, ti).trim()
+
+  if (pi !== -1 && pi > ti) {
     ritualSection = content.substring(ti + RITUAL_DELIM.length, pi).trim()
     if (fi !== -1 && fi > pi) {
       planSection = content.substring(pi + PLAN_DELIM.length, fi).trim()
@@ -515,7 +692,12 @@ export function parseReportSections(content: string): ReportSections {
       finalNarrativeSection = split.final
     }
   } else {
-    reportSection = content
+    if (fi !== -1 && fi > ti) {
+      ritualSection = content.substring(ti + RITUAL_DELIM.length, fi).trim()
+      finalNarrativeSection = content.substring(fi + FINAL_DELIM.length).trim()
+    } else {
+      ritualSection = content.substring(ti + RITUAL_DELIM.length).trim()
+    }
   }
 
   const affirmations = extractAffirmations(ritualSection)

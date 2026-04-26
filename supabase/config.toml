@@ -7,3 +7,6 @@ verify_jwt = false
 
 [functions.generate-zen-report-self]
 verify_jwt = false
+
+[functions.generate-zen-plan]
+verify_jwt = false

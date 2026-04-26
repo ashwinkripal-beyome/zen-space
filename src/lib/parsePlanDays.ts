@@ -3,14 +3,15 @@ import DOMPurify from 'dompurify'
 const ALLOWED_TAGS = ['h2', 'h3', 'p', 'ul', 'ol', 'li', 'strong', 'em', 'br', 'div']
 const ALLOWED_ATTR = ['class', 'data-day']
 
-const DAY_H3 = /^day\s*(\d+)/i
+/** Matches <h3>Day N</h3> (legacy) or <h3>Week N</h3> (current). */
+const DAY_OR_WEEK_H3 = /^(?:day|week)\s*(\d+)/i
 
-function strip18DayNodes(root: HTMLElement) {
+function strip18PlanTitleNodes(root: HTMLElement) {
   const candidates = root.querySelectorAll('h1, h2, h3, h4, p, div')
   const toRemove: Element[] = []
   candidates.forEach(el => {
     const t = el.textContent?.replace(/\s+/g, ' ').trim() ?? ''
-    if (/^18[-–]?\s*DAY\s+PERSONALIZED\s+PLAN$/i.test(t)) {
+    if (/^18[-–]?\s*(?:DAY|WEEK)\s+PERSONALIZED\s+PLAN$/i.test(t)) {
       toRemove.push(el)
     }
   })
@@ -111,7 +112,7 @@ function pickAlternatingTitlesFromSegments(segments: string[], docForClone: Docu
 }
 
 /**
- * Collect activity **titles** only (no short body lines) from day body.
+ * Collect activity **titles** only (no short body lines) from week block body.
  */
 function collectActivityTitleParts(wrap: HTMLElement, docForClone: Document): string[] {
   const parts: string[] = []
@@ -239,22 +240,23 @@ function extractDayCardTitle(
 }
 
 export type PlanDayBlock = {
+  /** Slot index 1–18; displayed in UI as "Week N". */
   day: number
   title: string
   /** More than one top-level &lt;p&gt; (plan format: one &lt;p&gt; per activity). */
   multipleActivities: boolean
-  /** Body after the day heading (no h3). */
+  /** Body after the week heading (no h3). */
   innerHtml: string
 }
 
 export type PlanPhaseBlock = {
-  /** Phase title from <h2> (e.g. Days 1–6). */
+  /** Phase title from <h2> (e.g. Weeks 1–6). */
   title: string
   days: PlanDayBlock[]
 }
 
 /**
- * Split plan HTML into phases (each <h2>) and day blocks under each phase.
+ * Split plan HTML into phases (each <h2>) and week blocks under each phase.
  */
 export function parsePlanPhases(html: string): PlanPhaseBlock[] {
   const clean = DOMPurify.sanitize(html, {
@@ -265,7 +267,7 @@ export function parsePlanPhases(html: string): PlanPhaseBlock[] {
   const root = doc.getElementById('plan-root')
   if (!root) return []
 
-  strip18DayNodes(root)
+  strip18PlanTitleNodes(root)
 
   const phases: PlanPhaseBlock[] = []
   let currentPhase: PlanPhaseBlock = { title: '', days: [] }
@@ -277,7 +279,7 @@ export function parsePlanPhases(html: string): PlanPhaseBlock[] {
     const wrap = doc.createElement('div')
     currentNodes.forEach(n => wrap.appendChild(n.cloneNode(true)))
     const innerHtml = wrap.innerHTML
-    const dayLabel = `Day ${currentDay}`
+    const dayLabel = `Week ${currentDay}`
     const { title, multipleActivities } = extractDayCardTitle(innerHtml, dayLabel, doc)
     currentPhase.days.push({
       day: currentDay,
@@ -310,7 +312,7 @@ export function parsePlanPhases(html: string): PlanPhaseBlock[] {
       continue
     }
     if (node.tagName === 'H3') {
-      const m = (node.textContent?.trim() ?? '').match(DAY_H3)
+      const m = (node.textContent?.trim() ?? '').match(DAY_OR_WEEK_H3)
       if (m) {
         flushDay()
         currentDay = Number.parseInt(m[1], 10)
@@ -330,7 +332,7 @@ export function parsePlanPhases(html: string): PlanPhaseBlock[] {
 }
 
 /**
- * All day blocks in document order (flattened phases).
+ * All week blocks in document order (flattened phases).
  */
 export function parsePlanDays(html: string): PlanDayBlock[] {
   return parsePlanPhases(html).flatMap(p => p.days)

@@ -13,6 +13,11 @@ import { cn } from '@/lib/utils'
 
 const glassCard = cn('zen-glass-card ring-0 shadow-none', 'zen-ring-primary')
 
+/** PostgREST / JS may vary UUID string casing; Map lookups must be stable. */
+function profileMapKey(id: string): string {
+  return id.trim().toLowerCase()
+}
+
 type LinkedClientDisplay = {
   linkId: string
   clientId: string
@@ -77,10 +82,15 @@ export function TherapistClientsPage() {
         console.error('[profiles]', profsError)
       }
 
-      const byId = new Map((profs ?? []).map(p => [p.id, p as ClientProfileFields]))
+      const byId = new Map(
+        (profs ?? []).map(p => {
+          const row = p as ClientProfileFields
+          return [profileMapKey(String(row.id)), row]
+        })
+      )
       setLinkedClients(
         linkRows.map(row => {
-          const p = byId.get(row.client_id as string)
+          const p = byId.get(profileMapKey(String(row.client_id)))
           return {
             linkId: String(row.id),
             clientId: String(row.client_id),

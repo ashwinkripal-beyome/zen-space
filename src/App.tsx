@@ -21,7 +21,8 @@ import { AdminLayout } from '@/layouts/AdminLayout'
 import { ProtectedRoute } from '@/components/ui/ProtectedRoute'
 import { LoginPage } from '@/pages/auth/LoginPage'
 import { SignupPage } from '@/pages/auth/SignupPage'
-import { MagicLinkPage } from '@/pages/auth/MagicLinkPage'
+import { ForgotPasswordPage } from '@/pages/auth/ForgotPasswordPage'
+import { ResetPasswordPage } from '@/pages/auth/ResetPasswordPage'
 import { ClientDashboard } from '@/pages/client/ClientDashboard'
 import { ClientProfilePage } from '@/pages/client/ClientProfilePage'
 import { ClientOtpScreen } from '@/pages/ClientOtpScreen'
@@ -43,6 +44,7 @@ import { TherapistClientPlanPage } from '@/pages/therapist/TherapistClientPlanPa
 import { TherapistNotificationsPage } from '@/pages/therapist/TherapistNotificationsPage'
 import { TherapistProfilePage } from '@/pages/therapist/TherapistProfilePage'
 import { AdminSectionPage } from '@/pages/admin/AdminSectionPage'
+import { AdminAccountPage } from '@/pages/admin/AdminAccountPage'
 
 function appPathForRole(role: 'admin' | 'therapist' | 'client'): string {
   switch (role) {
@@ -184,7 +186,8 @@ function App() {
           <Route path="/login/therapist" element={<LoginPage />} />
           <Route path="/login/admin" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
-          <Route path="/magic-link" element={<MagicLinkPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
         </Route>
 
         <Route path="/" element={<RoleHomeRedirect />} />
@@ -252,6 +255,7 @@ function App() {
           <Route path="therapists" element={<AdminSectionPage title="Therapists" />} />
           <Route path="reports" element={<AdminSectionPage title="Reports overview" />} />
           <Route path="subscriptions" element={<AdminSectionPage title="Subscriptions" />} />
+          <Route path="account" element={<AdminAccountPage />} />
         </Route>
 
         <Route

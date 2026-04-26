@@ -1,4 +1,4 @@
--- Per-client per-report 18-day checklist completion (cross-device).
+-- Per-client per-report 18-week checklist completion (cross-device).
 
 CREATE TABLE public.report_plan_progress (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

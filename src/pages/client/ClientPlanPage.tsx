@@ -1,20 +1,34 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CalendarDays, Download, Loader2 } from 'lucide-react'
+import { CalendarDays, ClipboardPenLine, Download, Loader2 } from 'lucide-react'
 import { PlanChecklist } from '@/components/PlanChecklist'
 import { PlanTimeline } from '@/components/PlanTimeline'
+import { ReportBody } from '@/components/ReportBody'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  reportDetailTabButtonClassName,
+  reportDetailTabListClassName,
+} from '@/components/layout/AppShell'
 import { useAuth } from '@/hooks/useAuth'
+import { useAssessmentAvailability } from '@/hooks/useAssessmentAvailability'
 import { useClientOnboarding } from '@/hooks/useClientOnboarding.tsx'
 import { pageStaggerItemStyle, usePageStaggerVisible } from '@/hooks/usePageStaggerVisible'
 import { supabase } from '@/lib/supabase'
+import { isEveryPlanWeekMarkedComplete } from '@/lib/supervisedAssessmentEligibility'
 import { printZenPlanPdf } from '@/lib/zenPrintDocument'
 import { zenPrintPdfMetadata } from '@/lib/zenPrintPayloadHelpers'
+
+function formatReassessDate(d: Date): string {
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+type PlanPageTab = 'ritual' | 'plan'
 
 export function ClientPlanPage() {
   const { user, profile } = useAuth()
   const { hasTherapists, therapistResolutionPending } = useClientOnboarding()
+  const availability = useAssessmentAvailability()
   const [loading, setLoading] = useState(true)
   const [latestReport, setLatestReport] = useState<{
     id: string
@@ -27,11 +41,38 @@ export function ClientPlanPage() {
     assessment: { score_total?: number | null; score_data?: unknown } | null
   } | null>(null)
   const planContent = latestReport?.plan_section ?? null
+  const ritualContent = latestReport?.ritual_section ?? null
   const reportId = latestReport?.id ?? null
-  const staggerVisible = usePageStaggerVisible(!loading, planContent ? 'plan' : 'empty')
+  const hasPlanOrRitual = Boolean(planContent || ritualContent)
+  const [tab, setTab] = useState<PlanPageTab>('plan')
+  const [planProgressCompleted, setPlanProgressCompleted] = useState<number[]>([])
+  const staggerVisible = usePageStaggerVisible(!loading, hasPlanOrRitual ? 'plan-ritual' : 'empty')
+
+  const allPlanWeeksMarkedComplete = Boolean(
+    planContent && isEveryPlanWeekMarkedComplete(planContent, planProgressCompleted)
+  )
+  const reassessSupervisedAllowed = availability.supervised.available
+
+  const onPlanProgressChange = useCallback(
+    (completed: number[]) => {
+      setPlanProgressCompleted(completed)
+      void availability.refetch()
+    },
+    [availability.refetch]
+  )
+
+  useEffect(() => {
+    if (!latestReport) return
+    if (planContent && !ritualContent) setTab('plan')
+    else if (!planContent && ritualContent) setTab('ritual')
+  }, [latestReport?.id, planContent, ritualContent])
+
+  useEffect(() => {
+    setPlanProgressCompleted([])
+  }, [reportId])
 
   const load = useCallback(async () => {
-    if (!user?.id || hasTherapists !== true) {
+    if (!user?.id) {
       setLoading(false)
       return
     }
@@ -99,33 +140,6 @@ export function ClientPlanPage() {
     )
   }
 
-  if (hasTherapists === false) {
-    return (
-      <div className="space-y-6">
-        <div style={pageStaggerItemStyle(0, true)}>
-          <h1 className="text-3xl font-bold text-foreground">18-Day Plan</h1>
-          <p className="mt-2 max-w-xl text-lg text-muted-foreground">
-            Your 18-day plan is available once you&apos;re linked with a therapist in Zen Space.
-          </p>
-        </div>
-        <Card className="zen-glass-card zen-ring-secondary ring-0 shadow-none" style={pageStaggerItemStyle(1, true)}>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-foreground">
-              <CalendarDays className="size-5 text-sky-300" />
-              Connect at Zen Garden
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-muted-foreground">
-            <p className="text-pretty leading-relaxed">
-              Link a Zen Specialist to your account to unlock your personalized plan. Visit your nearest Zen Garden and
-              ask to connect with a Zen Specialist—they can help you get set up here.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
-
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center gap-4 py-20 text-muted-foreground">
@@ -138,7 +152,7 @@ export function ClientPlanPage() {
   const handleDownloadPdf = () => {
     if (!latestReport) return
     const reportHtml = latestReport.report_section || latestReport.content || ''
-    const ritualHtml = latestReport.ritual_section || ''
+    const ritualHtml = ritualContent || ''
     const finalHtml = latestReport.final_narrative_section || ''
     const planHtml = latestReport.plan_section || ''
     const meta = zenPrintPdfMetadata(
@@ -177,8 +191,8 @@ export function ClientPlanPage() {
         className="flex flex-wrap items-start justify-between gap-4 print:hidden"
         style={pageStaggerItemStyle(0, staggerVisible)}
       >
-        <h1 className="text-3xl font-bold text-foreground">18-Day Plan</h1>
-        {planContent ? (
+        <h1 className="text-3xl font-bold text-foreground">18-Week Plan</h1>
+        {canPrintPdf ? (
           <Button
             type="button"
             variant="zenOutline"
@@ -192,20 +206,119 @@ export function ClientPlanPage() {
         ) : null}
       </div>
 
-      {planContent ? (
+      {hasPlanOrRitual ? (
         <>
-          <Card
-            className="zen-glass-card zen-ring-primary ring-0 shadow-none print:hidden"
+          <div
+            className={reportDetailTabListClassName}
             style={pageStaggerItemStyle(1, staggerVisible)}
           >
+            <button
+              type="button"
+              onClick={() => setTab('ritual')}
+              className={reportDetailTabButtonClassName(tab === 'ritual')}
+            >
+              Fourfold Zen Ritual
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab('plan')}
+              className={reportDetailTabButtonClassName(tab === 'plan')}
+            >
+              18-Week Plan
+            </button>
+          </div>
+
+          <Card
+            className="zen-glass-card zen-ring-primary ring-0 shadow-none print:hidden"
+            style={pageStaggerItemStyle(2, staggerVisible)}
+          >
             <CardContent className="px-3 pt-6 md:px-6">
-              {user?.id && reportId ? (
-                <PlanChecklist html={planContent} userId={user.id} reportId={reportId} />
-              ) : (
-                <PlanTimeline html={planContent} />
-              )}
+              {tab === 'ritual' &&
+                (ritualContent ? (
+                  <ReportBody content={ritualContent} />
+                ) : (
+                  <p className="py-8 text-muted-foreground">
+              Ready to begin your wellness journey?<br /><br />Reach out to us at{' '}
+              <a href="tel:+918888888888" className="font-medium text-foreground underline decoration-sky-400/50 underline-offset-2">
+                +91 8888888888
+              </a>, or visit your nearest Zen Garden with your self-assessment report to unlock your personalised 18-week plan and fourfold Zen ritual.<br /><br />We'd love to hear from you soon.
+              </p>
+                ))}
+              {tab === 'plan' &&
+                (planContent ? (
+                  user?.id && reportId ? (
+                    <PlanChecklist
+                      html={planContent}
+                      userId={user.id}
+                      reportId={reportId}
+                      onProgressChange={onPlanProgressChange}
+                    />
+                  ) : (
+                    <PlanTimeline html={planContent} />
+                  )
+                ) : (
+                  <p className="py-8 text-center text-muted-foreground">
+                    Your 18-week timeline will appear here once your therapist adds a plan, or when a
+                    supervised report with a plan is finalized.
+                  </p>
+                ))}
             </CardContent>
           </Card>
+
+          {planContent && hasTherapists === true && allPlanWeeksMarkedComplete ? (
+            <Card
+              className="zen-glass-card zen-ring-secondary ring-0 shadow-none print:hidden"
+              style={pageStaggerItemStyle(3, staggerVisible)}
+            >
+              <CardContent className="space-y-4 px-3 py-6 md:px-6">
+                <div className="flex flex-col gap-1">
+                  <h2 className="text-lg font-semibold text-foreground">Ready for your next check-in</h2>
+                  <p className="text-sm text-muted-foreground">
+                    You&apos;ve marked every week on this plan. When you&apos;re eligible, start a new supervised
+                    assessment with your therapist.
+                  </p>
+                </div>
+                {availability.loading ? (
+                  <p className="text-sm text-muted-foreground">Checking eligibility…</p>
+                ) : reassessSupervisedAllowed ? (
+                  <Button asChild variant="zen" className="w-full sm:w-auto">
+                    <Link to="/app/client/assessment/supervised/session" className="gap-2">
+                      <ClipboardPenLine className="size-4" aria-hidden />
+                      Reassess supervised assessment
+                    </Link>
+                  </Button>
+                ) : (
+                  <div className="space-y-2">
+                    <Button type="button" variant="zen" className="w-full sm:w-auto" disabled>
+                      <ClipboardPenLine className="mr-2 size-4" aria-hidden />
+                      Reassess supervised assessment
+                    </Button>
+                    {availability.supervised.supervisedBlockedReason === 'min_weeks' &&
+                    availability.supervised.nextDate ? (
+                      <p className="text-xs text-muted-foreground">
+                        Unlocks on {formatReassessDate(availability.supervised.nextDate)}. Your therapist can enable it earlier if needed.
+                      </p>
+                    ) : availability.supervised.supervisedBlockedReason === 'no_plan' ? (
+                      <p className="text-xs text-muted-foreground">
+                        Waiting for plan details on your latest report. Your therapist can enable reassessment if
+                        needed.
+                      </p>
+                    ) : availability.supervised.supervisedBlockedReason === 'not_paid' ? (
+                      <p className="text-xs text-muted-foreground">
+                        Your therapist must mark you as a paid customer on their client page before the next
+                        supervised assessment is available. You can use the self assessment until then.
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Not available yet. Your therapist can enable the next supervised assessment from their
+                        dashboard.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ) : null}
         </>
       ) : (
         <Card
@@ -215,16 +328,17 @@ export function ClientPlanPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-foreground">
               <CalendarDays className="size-5 text-sky-300" />
-              Your 18-Day Plan
+              Your 18-Week Plan
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4 text-muted-foreground">
-            <p>
-              Your personalized 18-day plan will appear here after you generate a Zen Plan report.
+            <p className="text-pretty leading-relaxed">
+              Ready to begin your wellness journey?<br /><br />Reach out to us at{' '}
+              <a href="tel:+918888888888" className="font-medium text-foreground underline decoration-sky-400/50 underline-offset-2">
+                +91 8888888888
+              </a>, or visit your nearest Zen Garden with your self-assessment report to unlock your personalised 18-week plan and fourfold Zen ritual.<br /><br />We'd love to hear from you soon.
+            
             </p>
-            <Button asChild variant="zenOutline">
-              <Link to="/app/client/assessment">Take an assessment</Link>
-            </Button>
           </CardContent>
         </Card>
       )}

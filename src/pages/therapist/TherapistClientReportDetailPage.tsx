@@ -74,13 +74,7 @@ export function TherapistClientReportDetailPage() {
         .eq('client_id', clientId)
         .maybeSingle()
 
-      if (linkErr || !link) {
-        if (linkErr) console.error('[therapist_clients link]', linkErr)
-        setForbidden(true)
-        setReport(null)
-        setClientPrintProfile(null)
-        return
-      }
+      if (linkErr) console.error('[therapist_clients link]', linkErr)
 
       let { data, error } = await supabase
         .from('reports')
@@ -104,35 +98,69 @@ export function TherapistClientReportDetailPage() {
 
       if (error || !data) {
         if (error) console.error(error)
+        if (!link) {
+          const { data: preview, error: previewErr } = await supabase.rpc(
+            'get_therapist_unlinked_self_report_preview',
+            { p_client_id: clientId, p_report_id: reportId }
+          )
+          if (previewErr) {
+            console.error('[get_therapist_unlinked_self_report_preview]', previewErr)
+          } else if (preview && typeof preview === 'object') {
+            const j = preview as Record<string, unknown>
+            setReport({
+              reportSection: (j.report_section as string) || null,
+              ritualSection: (j.ritual_section as string) || null,
+              finalNarrativeSection: (j.final_narrative_section as string) || null,
+              planSection: (j.plan_section as string) || null,
+              content: (j.content as string) || null,
+              assessmentId: typeof j.assessment_id === 'string' ? j.assessment_id : null,
+              createdAt: typeof j.created_at === 'string' ? j.created_at : null,
+              assessment: {
+                score_total: typeof j.score_total === 'number' ? j.score_total : null,
+                score_data: j.score_data,
+              },
+            })
+            setClientPrintProfile({
+              name: (j.client_name as string) ?? null,
+              first_name: (j.client_first_name as string) ?? null,
+              last_name: (j.client_last_name as string) ?? null,
+              gender: (j.client_gender as string) ?? null,
+              age: typeof j.client_age === 'number' ? j.client_age : null,
+            })
+            return
+          }
+        }
         setReport(null)
         setClientPrintProfile(null)
-      } else {
-        const row = data as Record<string, unknown>
-        const join = row.assessments as Record<string, unknown> | Record<string, unknown>[] | null | undefined
-        const assessmentRow = Array.isArray(join) ? join[0] : join
-        setReport({
-          reportSection: (row.report_section as string) || null,
-          ritualSection: (row.ritual_section as string) || null,
-          finalNarrativeSection: (row.final_narrative_section as string) || null,
-          planSection: (row.plan_section as string) || null,
-          content: (row.content as string) || null,
-          assessmentId: typeof row.assessment_id === 'string' ? row.assessment_id : null,
-          createdAt: typeof row.created_at === 'string' ? row.created_at : null,
-          assessment: assessmentRow
-            ? {
-                score_total:
-                  typeof assessmentRow.score_total === 'number' ? assessmentRow.score_total : null,
-                score_data: assessmentRow.score_data,
-              }
-            : null,
-        })
-        const { data: cp } = await supabase
-          .from('profiles')
-          .select('name, first_name, last_name, gender, age')
-          .eq('id', clientId)
-          .maybeSingle()
-        setClientPrintProfile(cp as ClientPrintProfile | null)
+        setForbidden(!link)
+        return
       }
+
+      const row = data as Record<string, unknown>
+      const join = row.assessments as Record<string, unknown> | Record<string, unknown>[] | null | undefined
+      const assessmentRow = Array.isArray(join) ? join[0] : join
+      setReport({
+        reportSection: (row.report_section as string) || null,
+        ritualSection: (row.ritual_section as string) || null,
+        finalNarrativeSection: (row.final_narrative_section as string) || null,
+        planSection: (row.plan_section as string) || null,
+        content: (row.content as string) || null,
+        assessmentId: typeof row.assessment_id === 'string' ? row.assessment_id : null,
+        createdAt: typeof row.created_at === 'string' ? row.created_at : null,
+        assessment: assessmentRow
+          ? {
+              score_total:
+                typeof assessmentRow.score_total === 'number' ? assessmentRow.score_total : null,
+              score_data: assessmentRow.score_data,
+            }
+          : null,
+      })
+      const { data: cp } = await supabase
+        .from('profiles')
+        .select('name, first_name, last_name, gender, age')
+        .eq('id', clientId)
+        .maybeSingle()
+      setClientPrintProfile(cp as ClientPrintProfile | null)
     } finally {
       setLoading(false)
     }
@@ -304,8 +332,8 @@ export function TherapistClientReportDetailPage() {
             (ritualContent ? (
               <ReportBody content={ritualContent} />
             ) : (
-              <p className="py-8 text-center text-muted-foreground">
-                No ritual content available. The report may have been generated before section splitting was enabled.
+              <p className="py-8 text-muted-foreground">
+              No rituals or 18 week plan created.
               </p>
             ))}
           {tab === 'assessment' && (

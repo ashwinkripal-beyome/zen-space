@@ -1,22 +1,19 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { Bell, Loader2 } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { Bell, Loader2, Mail, Phone, UserPlus } from 'lucide-react'
+import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { useAuth } from '@/hooks/useAuth'
 import { useTherapistPendingRealtime } from '@/hooks/useTherapistPendingRealtime'
 import { pageStaggerItemStyle, usePageStaggerVisible } from '@/hooks/usePageStaggerVisible'
-import { formatClientDisplayName } from '@/lib/clientDisplayName'
-import { fetchTherapistPendingSupervisedAssessments } from '@/lib/therapistPendingObservations'
-import { supabase } from '@/lib/supabase'
+import {
+  claimUnlinkedSelfLead,
+  fetchTherapistPendingDisplayRows,
+  type TherapistPendingDisplayRow,
+} from '@/lib/therapistPendingObservations'
 import { cn } from '@/lib/utils'
-
-type PendingRow = {
-  assessmentId: string
-  clientId: string
-  clientName: string
-  completedAt: string
-}
 
 function formatDate(iso: string): string {
   try {
@@ -26,10 +23,18 @@ function formatDate(iso: string): string {
   }
 }
 
+const cardClass = cn(
+  'group flex flex-col gap-3 rounded-2xl border border-white/12 bg-white/[0.05] p-5 shadow-sm',
+  'ring-1 ring-white/5 transition-all',
+  'hover:border-white/20 hover:bg-white/[0.08] hover:ring-white/15'
+)
+
 export function TherapistNotificationsPage() {
   const { user } = useAuth()
-  const [items, setItems] = useState<PendingRow[]>([])
+  const navigate = useNavigate()
+  const [items, setItems] = useState<TherapistPendingDisplayRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [claimingId, setClaimingId] = useState<string | null>(null)
   const headerStagger = usePageStaggerVisible(true)
   const bodyStagger = usePageStaggerVisible(!loading, items.length)
 
@@ -40,30 +45,8 @@ export function TherapistNotificationsPage() {
       return
     }
     if (!silent) setLoading(true)
-
-    const pending = await fetchTherapistPendingSupervisedAssessments(user.id)
-    if (pending.length === 0) {
-      setItems([])
-      if (!silent) setLoading(false)
-      return
-    }
-
-    const uniqueClientIds = [...new Set(pending.map(p => p.clientId))]
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('id, email, name, first_name, last_name')
-      .in('id', uniqueClientIds)
-
-    const byId = new Map((profiles ?? []).map(p => [p.id, p]))
-
-    setItems(
-      pending.map(p => ({
-        assessmentId: p.assessmentId,
-        clientId: p.clientId,
-        clientName: formatClientDisplayName(byId.get(p.clientId) ?? undefined),
-        completedAt: p.completedAt,
-      }))
-    )
+    const rows = await fetchTherapistPendingDisplayRows(user.id)
+    setItems(rows)
     if (!silent) setLoading(false)
   }, [user?.id])
 
@@ -83,16 +66,33 @@ export function TherapistNotificationsPage() {
     return () => document.removeEventListener('visibilitychange', onVis)
   }, [load])
 
+  const onClaim = async (clientId: string) => {
+    setClaimingId(clientId)
+    try {
+      const { error } = await claimUnlinkedSelfLead(clientId)
+      if (error) {
+        const msg = error.message?.toLowerCase() ?? ''
+        if (msg.includes('already_link') || msg.includes('unique')) {
+          toast.error('Another therapist already added this client.')
+        } else {
+          toast.error(error.message)
+        }
+        return
+      }
+      toast.success('Client added to your list.')
+      void load({ silent: true })
+      navigate(`/app/therapist/clients/${clientId}`, { replace: false })
+    } finally {
+      setClaimingId(null)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div style={pageStaggerItemStyle(0, headerStagger)}>
         <h1 className="text-3xl font-bold text-foreground">Notifications</h1>
         <p className="mt-2 text-lg text-muted-foreground">
-          Clients whose latest supervised assessment needs your observations and Zen Plan report generation.
-        </p>
-        <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-          Updates when a linked client&apos;s assessment or report changes. As a backup, the list also refreshes
-          every five minutes while this page is open.
+         Updates when supervised assessments are completed by a client or new self-assessment leads are available.
         </p>
       </div>
 
@@ -110,38 +110,121 @@ export function TherapistNotificationsPage() {
             <div className="rounded-full bg-white/5 p-5 ring-1 ring-white/10">
               <Bell className="size-8 text-muted-foreground" aria-hidden />
             </div>
-            <p className="text-muted-foreground">All caught up! No assessments waiting for observations or report generation.</p>
+            <p className="text-muted-foreground">All caught up! Nothing is waiting in your queue.</p>
           </CardContent>
         </Card>
       ) : (
         <ul className="grid gap-4 sm:grid-cols-2">
           {items.map((item, i) => (
-            <li key={item.assessmentId} style={pageStaggerItemStyle(i, bodyStagger)}>
-              <Link
-                to={`/app/therapist/clients/${item.clientId}/observations`}
-                className={cn(
-                  'group flex flex-col gap-3 rounded-2xl border border-white/12 bg-white/[0.05] p-5 shadow-sm',
-                  'ring-1 ring-white/5 transition-all',
-                  'hover:border-white/20 hover:bg-white/[0.08] hover:ring-white/15'
-                )}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-lg font-semibold tracking-tight text-foreground">
-                      {item.clientName}
-                    </p>
-                    <p className="mt-0.5 text-sm text-muted-foreground">
-                      Assessment completed {formatDate(item.completedAt)}
-                    </p>
+            <li key={`${item.kind}-${item.assessmentId}`} style={pageStaggerItemStyle(i, bodyStagger)}>
+              {item.kind === 'supervised' ? (
+                <Link to={`/app/therapist/clients/${item.clientId}/observations`} className={cardClass}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-lg font-semibold tracking-tight text-foreground">{item.clientName}</p>
+                      <p className="mt-0.5 text-sm text-muted-foreground">
+                        Supervised assessment completed {formatDate(item.completedAt)}
+                      </p>
+                    </div>
+                    <Badge
+                      variant="outline"
+                      className="shrink-0 border-sky-400/30 bg-sky-500/12 text-xs text-sky-100"
+                    >
+                      Observations
+                    </Badge>
                   </div>
-                  <Badge
-                    variant="outline"
-                    className="shrink-0 border-emerald-400/30 bg-emerald-500/15 text-xs text-emerald-200"
-                  >
-                    Action needed
-                  </Badge>
+                </Link>
+              ) : (
+                <div
+                  className={cn(
+                    cardClass,
+                    'p-0 overflow-hidden hover:border-white/12 hover:bg-white/[0.05]'
+                  )}
+                >
+                  {item.reportId ? (
+                    <Link
+                      to={`/app/therapist/clients/${item.clientId}/reports/${item.reportId}`}
+                      className={cn(
+                        'block p-5 pb-2 transition-colors',
+                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--zen-ring-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent'
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-lg font-semibold tracking-tight text-foreground">
+                            {item.clientName}
+                          </p>
+                          <p className="mt-0.5 text-sm text-muted-foreground">
+                            Self assessment completed {formatDate(item.completedAt)} · not linked to a therapist yet
+                          </p>
+                          <p className="mt-2 text-xs text-sky-200/80">Open Zen Plan report</p>
+                        </div>
+                        <Badge
+                          variant="outline"
+                          className="shrink-0 border-amber-400/30 bg-amber-500/12 text-xs text-amber-100"
+                        >
+                          New lead
+                        </Badge>
+                      </div>
+                    </Link>
+                  ) : (
+                    <div className="p-5 pb-2">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-lg font-semibold tracking-tight text-foreground">
+                            {item.clientName}
+                          </p>
+                          <p className="mt-0.5 text-sm text-muted-foreground">
+                            Self assessment completed {formatDate(item.completedAt)} · not linked to a therapist yet
+                          </p>
+                          <p className="mt-2 text-xs text-muted-foreground">Report is not ready yet.</p>
+                        </div>
+                        <Badge
+                          variant="outline"
+                          className="shrink-0 border-amber-400/30 bg-amber-500/12 text-xs text-amber-100"
+                        >
+                          New lead
+                        </Badge>
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex flex-wrap items-center gap-2 border-t border-white/10 bg-white/[0.02] px-5 py-3">
+                    {item.email ? (
+                      <Button variant="zenOutline" size="sm" className="gap-1.5" asChild>
+                        <a href={`mailto:${item.email}`}>
+                          <Mail className="size-3.5" aria-hidden />
+                          Email
+                        </a>
+                      </Button>
+                    ) : null}
+                    {item.phone ? (
+                      <Button variant="zenOutline" size="sm" className="gap-1.5" asChild>
+                        <a href={`tel:${item.phone}`}>
+                          <Phone className="size-3.5" aria-hidden />
+                          Call
+                        </a>
+                      </Button>
+                    ) : null}
+                    {!item.email && !item.phone ? (
+                      <p className="text-xs text-muted-foreground">No email or phone on file.</p>
+                    ) : null}
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="gap-1.5"
+                      disabled={claimingId === item.clientId}
+                      onClick={() => void onClaim(item.clientId)}
+                    >
+                      {claimingId === item.clientId ? (
+                        <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                      ) : (
+                        <UserPlus className="size-3.5" aria-hidden />
+                      )}
+                      Add as my client
+                    </Button>
+                  </div>
                 </div>
-              </Link>
+              )}
             </li>
           ))}
         </ul>

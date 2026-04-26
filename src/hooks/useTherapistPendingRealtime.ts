@@ -4,8 +4,8 @@ import { supabase } from '@/lib/supabase'
 const FIVE_MIN_MS = 5 * 60 * 1000
 
 /**
- * When enabled, refetches after Postgres changes to assessments or reports that this user
- * may see under RLS (e.g. therapist linked to the client). Also runs an infrequent poll as a fallback.
+ * When enabled, refetches after Postgres changes to assessments, reports, or the therapist inbox
+ * bump (any therapist link change) so all therapists’ pending counts stay in sync. Also polls occasionally.
  */
 export function useTherapistPendingRealtime(
   userId: string | undefined,
@@ -33,6 +33,11 @@ export function useTherapistPendingRealtime(
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'reports' },
+        () => tick()
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'therapist_inbox_bump' },
         () => tick()
       )
       .subscribe()

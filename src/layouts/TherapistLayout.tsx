@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/button'
 import { useAuth } from '@/hooks/useAuth'
 import { isTherapistProfileComplete } from '@/lib/therapistProfileComplete'
 import { useTherapistPendingRealtime } from '@/hooks/useTherapistPendingRealtime'
-import { fetchTherapistPendingSupervisedAssessments } from '@/lib/therapistPendingObservations'
+import { fetchTherapistAllPending } from '@/lib/therapistPendingObservations'
 import { cn } from '@/lib/utils'
 
 export function TherapistLayout() {
@@ -29,7 +29,7 @@ export function TherapistLayout() {
 
   const fetchPendingCount = useCallback(async () => {
     if (!user?.id) return
-    const pending = await fetchTherapistPendingSupervisedAssessments(user.id)
+    const pending = await fetchTherapistAllPending(user.id)
     setPendingCount(pending.length)
   }, [user?.id])
 

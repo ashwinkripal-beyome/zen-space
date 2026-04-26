@@ -4,7 +4,7 @@
 
 - **Remove** the cover **mandala** SVG (feels cheap).
 - **Remove** the **“What’s inside”** outline / TOC block entirely (and the `extractH2Titles` / `buildTocHtml` pipeline if nothing else uses it).
-- **Do not add** editorial or decorative HTML that is not part of the stored report: remove **infographic blocks** injected into sections (zones strip, fourfold flow, 18-day timeline + day dots). Those are not in the source HTML.
+- **Do not add** editorial or decorative HTML that is not part of the stored report: remove **infographic blocks** injected into sections (zones strip, fourfold flow, 18-week timeline + week dots). Those are not in the source HTML.
 - **Keep** the real report fragments as-is; only improve **typography, spacing, phase/day wrappers, pagination**, and **color accents** derived from existing structure.
 - **Zone colors** for Balance / Blossom / Bliss in the PDF should match the **assessment swipe card** gradients (same palette as the app), not ad-hoc sage/tan/lavender.
 
@@ -36,7 +36,7 @@ Single file: [`src/lib/zenPrintDocument.ts`](e:\zariyaa\App\zen-space\src\lib\ze
 
 - **Remove section numbers** (no `01`, `02`, …).
 - **Remove per-section icons** in the header row so the PDF reads as **one continuous report**, not a slide deck of parts.
-- **Section titles** (Report, Final narrative, Fourfold Zen Ritual, 18-Day Plan): use **bright, swipe-aligned colored bands or backgrounds** as the only strong visual demarcation — see **D** for palette. Body typography stays **minimal and clean** (neutral paper, restrained prose styles).
+- **Section titles** (Report, Final narrative, Fourfold Zen Ritual, 18-Week Plan): use **bright, swipe-aligned colored bands or backgrounds** as the only strong visual demarcation — see **D** for palette. Body typography stays **minimal and clean** (neutral paper, restrained prose styles).
 
 ### B. Content-only display
 

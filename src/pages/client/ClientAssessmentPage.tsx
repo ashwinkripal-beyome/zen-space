@@ -41,12 +41,20 @@ export function ClientAssessmentPage() {
   const name = displayFirstName(profile ?? null)
 
   const therapistLinked = hasTherapists === true
+  const paidForSupervised = availability.isPaidForSupervised
   const staggerVisible = usePageStaggerVisible(true)
   const showTherapistBanner = !therapistLinked && !therapistResolutionPending
   const tileStaggerBase = showTherapistBanner ? 2 : 1
 
   const selfStatus = (): Pick<AssessmentTile, 'status' | 'statusLabel' | 'to'> => {
+    if (therapistResolutionPending) return { status: 'locked', statusLabel: 'Loading…' }
     if (availability.loading) return { status: 'locked', statusLabel: 'Loading…' }
+    if (therapistLinked && paidForSupervised) {
+      return {
+        status: 'locked',
+        statusLabel: 'Use supervised assessment',
+      }
+    }
     if (!availability.self.available) {
       const reason = availability.self.selfUnavailableReason
       if (reason === 'supervised_first') {
@@ -66,11 +74,30 @@ export function ClientAssessmentPage() {
   const supervisedStatus = (): Pick<AssessmentTile, 'status' | 'statusLabel' | 'to'> => {
     if (!therapistLinked) return { status: 'locked', statusLabel: 'Link therapist first' }
     if (availability.loading) return { status: 'locked', statusLabel: 'Loading…' }
+    if (therapistLinked && !paidForSupervised) {
+      return { status: 'locked', statusLabel: 'Your therapist will enable this for paid customers' }
+    }
     if (!availability.supervised.available) {
-      return {
-        status: 'cooldown',
-        statusLabel: `Available after ${formatCooldownDate(availability.supervised.nextDate!)}`,
+      const br = availability.supervised.supervisedBlockedReason
+      if (br === 'plan_incomplete') {
+        return {
+          status: 'cooldown',
+          statusLabel: 'Mark every week complete on your 18-week plan first',
+        }
       }
+      if (br === 'no_plan') {
+        return {
+          status: 'cooldown',
+          statusLabel: 'Waiting for your 18-week plan from your therapist',
+        }
+      }
+      if (br === 'min_weeks' && availability.supervised.nextDate) {
+        return {
+          status: 'cooldown',
+          statusLabel: `Available after ${formatCooldownDate(availability.supervised.nextDate)}`,
+        }
+      }
+      return { status: 'cooldown', statusLabel: 'Not available yet' }
     }
     return { status: 'available', statusLabel: 'Available', to: '/app/client/assessment/supervised/session' }
   }
@@ -90,7 +117,9 @@ export function ClientAssessmentPage() {
       id: 'self',
       title: 'Self Assessment',
       description:
-        'Take the full benchmark assessment on your own. Answer questions across Balance, Blossom & Bliss zones, add your observations, and generate your Zen Plan report instantly.',
+        therapistLinked
+          ? 'One-time self benchmark while you are linked and not yet on a paid program. After your therapist marks you as a paid customer, use the supervised assessment instead.'
+          : 'Trial assessment before you link with a therapist: full benchmark on your own, your observations, and an instant Zen Plan report. When you are linked and on a paid program, use the supervised assessment instead.',
       duration: '~15 min',
       questions: BENCHMARK_TOTAL_QUESTIONS,
       icon: <ClipboardCheck className="size-8 text-sky-300" />,

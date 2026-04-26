@@ -23,7 +23,7 @@ const items: { to: string; end?: boolean; label: string; icon: typeof LayoutDash
   { to: '/app/client', end: true, label: 'Home', icon: LayoutDashboard, lock: 'main' },
   { to: '/app/client/assessment', label: 'Assessments', icon: ClipboardList, lock: 'main' },
   { to: '/app/client/report', label: 'Report', icon: FileText, lock: 'main' },
-  { to: '/app/client/plan', label: '18-Day Plan', icon: CalendarDays, lock: 'main' },
+  { to: '/app/client/plan', label: '18-Week Plan', icon: CalendarDays, lock: 'main' },
   { to: '/app/client/therapists', label: 'Therapists', icon: Users, lock: 'therapistTab' },
   { to: '/app/client/profile', label: 'Profile', icon: UserRound, lock: 'never' },
 ]
@@ -106,9 +106,6 @@ export function ClientLayout() {
       <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Client</p>
       <nav className="flex flex-col gap-1">
         {items.map(({ to, end, label, icon: Icon, lock }) => {
-          if (to === '/app/client/plan' && hasTherapists !== true) {
-            return null
-          }
           const isLocked = locked(lock)
           if (isLocked) {
             return (

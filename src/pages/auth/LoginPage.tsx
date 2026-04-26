@@ -119,12 +119,12 @@ export function LoginPage() {
           <div className="mt-6 space-y-3 text-center text-sm text-muted-foreground">
             <p>
               <Link to="/signup" className="font-medium text-foreground underline hover:text-foreground/90">
-                Create client account
+                Create account
               </Link>
             </p>
             <p>
-              <Link to="/magic-link" className="underline hover:text-foreground/90">
-                Sign in with magic link
+              <Link to="/forgot-password" className="underline hover:text-foreground/90">
+                Forgot password?
               </Link>
             </p>
             <p className="flex flex-wrap justify-center gap-x-3 gap-y-1 text-xs">
