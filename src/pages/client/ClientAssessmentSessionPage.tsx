@@ -31,7 +31,6 @@ import { messageFromFunctionInvokeFailure } from '@/lib/functionInvokeError'
 import { pageStaggerItemStyle, usePageStaggerVisible } from '@/hooks/usePageStaggerVisible'
 
 const SWIPE_THRESHOLD = 72
-const SAVE_DEBOUNCE_MS = 400
 
 type LocalAnswer = {
   value: number
@@ -386,7 +385,8 @@ export function ClientAssessmentSessionPage() {
   const [showDisclaimer, setShowDisclaimer] = useState(false)
   /** 0 = intro copy, 1 = how to answer (both must be seen before starting). */
   const [disclaimerStep, setDisclaimerStep] = useState(0)
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** Blocks double commits before the next frame applies `disabled` on the card. */
+  const commitInFlightRef = useRef(false)
 
   const modeTitle = isSelf ? 'Self Assessment' : 'Supervised Assessment'
   const reviewPath = `/app/client/assessment/${mode}/review`
@@ -425,23 +425,6 @@ export function ClientAssessmentSessionPage() {
     },
     []
   )
-
-  const scheduleSave = useCallback(
-    (aid: string, q: BenchmarkQuestion, value: number, swipeDirection: string, skipped: boolean) => {
-      if (saveTimer.current) clearTimeout(saveTimer.current)
-      saveTimer.current = setTimeout(() => {
-        void flushSave(aid, q, value, swipeDirection, skipped)
-        saveTimer.current = null
-      }, SAVE_DEBOUNCE_MS)
-    },
-    [flushSave]
-  )
-
-  useEffect(() => {
-    return () => {
-      if (saveTimer.current) clearTimeout(saveTimer.current)
-    }
-  }, [])
 
   useEffect(() => {
     if (showDisclaimer) setDisclaimerStep(0)
@@ -602,30 +585,44 @@ export function ClientAssessmentSessionPage() {
 
   const handleCommit = useCallback(
     (value: number, direction: string, skipped: boolean) => {
+      if (commitInFlightRef.current) return
       if (!assessmentId || !question) return
+      commitInFlightRef.current = true
       const q = question
       const updated = {
         ...answers,
         [q.id]: { value, swipe_direction: direction, skipped },
       }
+      // Lock swipe + buttons on the next paint while this answer is persisted (flushSave also toggles `saving`).
+      flushSync(() => {
+        setSaving(true)
+      })
+
       setAnswers(updated)
-      scheduleSave(assessmentId, q, value, direction, skipped)
 
       const allDone = BENCHMARK_QUESTIONS.every(bq => updated[bq.id])
-      if (allDone) {
-        setPhase('observations')
-        return
-      }
-
-      for (let offset = 1; offset <= BENCHMARK_TOTAL_QUESTIONS; offset++) {
-        const idx = (currentIndex + offset) % BENCHMARK_TOTAL_QUESTIONS
-        if (!updated[BENCHMARK_QUESTIONS[idx].id]) {
-          setCurrentIndex(idx)
-          return
+      if (!allDone) {
+        for (let offset = 1; offset <= BENCHMARK_TOTAL_QUESTIONS; offset++) {
+          const idx = (currentIndex + offset) % BENCHMARK_TOTAL_QUESTIONS
+          if (!updated[BENCHMARK_QUESTIONS[idx].id]) {
+            setCurrentIndex(idx)
+            break
+          }
         }
       }
+
+      void (async () => {
+        try {
+          await flushSave(assessmentId, q, value, direction, skipped)
+          if (allDone) {
+            setPhase('observations')
+          }
+        } finally {
+          commitInFlightRef.current = false
+        }
+      })()
     },
-    [assessmentId, question, answers, scheduleSave, currentIndex]
+    [assessmentId, question, answers, currentIndex, flushSave]
   )
 
   const handleBack = useCallback(() => {
@@ -666,11 +663,6 @@ export function ClientAssessmentSessionPage() {
       valueMap[q.id] = a.value
     }
 
-    if (saveTimer.current) {
-      clearTimeout(saveTimer.current)
-      saveTimer.current = null
-    }
-
     if (!isSelf) {
       flushSync(() => {
         setSubmitting(true)
@@ -678,12 +670,6 @@ export function ClientAssessmentSessionPage() {
     }
 
     try {
-      const lastQ = BENCHMARK_QUESTIONS[BENCHMARK_TOTAL_QUESTIONS - 1]
-      const lastA = answers[lastQ.id]
-      if (lastA) {
-        await flushSave(assessmentId, lastQ, lastA.value, lastA.swipe_direction, lastA.skipped)
-      }
-
       const scores = computeBenchmarkScores(valueMap)
       const score_data = {
         kind: 'benchmark' as const,
@@ -791,6 +777,7 @@ export function ClientAssessmentSessionPage() {
         </div>
         <div style={pageStaggerItemStyle(1, staggerVisible)}>
           <ClientObservationsForm
+            key={assessmentId}
             assessmentId={assessmentId}
             onComplete={handleObservationsComplete}
             submitting={submitting}
@@ -944,7 +931,7 @@ export function ClientAssessmentSessionPage() {
               variant="zenOutline"
               size="sm"
               onClick={handleBack}
-              disabled={currentIndex === 0}
+              disabled={currentIndex === 0 || saving}
             >
               <ChevronLeft className="mr-1 size-4" aria-hidden />
               Previous
@@ -980,7 +967,7 @@ export function ClientAssessmentSessionPage() {
             key={question.id}
             question={question}
             onCommit={handleCommit}
-            disabled={submitting}
+            disabled={submitting || saving}
             currentAnswer={answers[question.id]}
           />
         )}

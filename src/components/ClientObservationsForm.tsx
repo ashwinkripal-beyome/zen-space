@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   CLIENT_OBSERVATION_QUESTIONS,
   emptyClientObservations,
+  normalizeClientObservations,
   type ClientObservations,
 } from '@/data/clientObservationOptions'
 import { supabase } from '@/lib/supabase'
@@ -20,6 +21,32 @@ interface Props {
 export function ClientObservationsForm({ assessmentId, onComplete, submitting }: Props) {
   const [obs, setObs] = useState<ClientObservations>(emptyClientObservations)
   const [saving, setSaving] = useState(false)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    async function run() {
+      const { data, error } = await supabase
+        .from('assessments')
+        .select('client_observations')
+        .eq('id', assessmentId)
+        .maybeSingle()
+      if (cancelled) return
+      if (error) {
+        console.error('[ClientObservationsForm load]', error)
+        toast.error(error.message)
+        setObs(emptyClientObservations())
+      } else {
+        setObs(normalizeClientObservations(data?.client_observations))
+      }
+      setLoading(false)
+    }
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [assessmentId])
 
   const toggleChip = (questionKey: string, chip: string, singleSelect?: boolean) => {
     setObs(prev => {
@@ -73,7 +100,20 @@ export function ClientObservationsForm({ assessmentId, onComplete, submitting }:
     }
   }
 
-  const busy = saving || submitting
+  const busy = saving || submitting || loading
+
+  if (loading) {
+    return (
+      <div
+        className="mx-auto flex w-full max-w-2xl flex-col items-center justify-center gap-3 py-16"
+        aria-busy="true"
+        aria-live="polite"
+      >
+        <Loader2 className="size-8 animate-spin text-sky-300" aria-hidden />
+        <p className="text-sm text-muted-foreground">Loading your observations…</p>
+      </div>
+    )
+  }
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-5">
