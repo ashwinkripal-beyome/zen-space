@@ -1,13 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronRight, Search, Users } from 'lucide-react'
-import { useTherapistOtpSessionDialog } from '@/components/therapist/TherapistOtpSessionDialog'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { useAuth } from '@/hooks/useAuth'
 import { pageStaggerItemStyle, usePageStaggerVisible } from '@/hooks/usePageStaggerVisible'
 import { formatAgeDisplay, formatClientDisplayName, formatGenderLabel } from '@/lib/clientDisplayName'
+import {
+  ALL_STATUS_LABELS,
+  CLIENT_STATUS_META,
+  computeClientStatus,
+  type ClientStatusLabel,
+} from '@/lib/clientStatus'
 import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
 
@@ -27,6 +33,10 @@ type LinkedClientDisplay = {
   role: string
   gender: string | null
   age: number | null
+  clientStatus: string | null
+  isPaidCustomer: boolean
+  hasCompletedSelfAssessment: boolean
+  statusLabel: ClientStatusLabel
 }
 
 type ClientProfileFields = {
@@ -38,6 +48,8 @@ type ClientProfileFields = {
   role: string
   gender: string | null
   age: number | null
+  client_status: string | null
+  is_paid_customer: boolean
 }
 
 export function TherapistClientsPage() {
@@ -45,10 +57,7 @@ export function TherapistClientsPage() {
   const [linkedClients, setLinkedClients] = useState<LinkedClientDisplay[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-
-  const { therapistOtpSessionDialog, generateOtpTriggerButton } = useTherapistOtpSessionDialog({
-    activeOtpSessions: [],
-  })
+  const [statusFilter, setStatusFilter] = useState<ClientStatusLabel | null>(null)
 
   const load = useCallback(async (silent = false) => {
     if (!user?.id) return
@@ -73,24 +82,41 @@ export function TherapistClientsPage() {
       }
 
       const clientIds = [...new Set(linkRows.map(r => r.client_id as string))]
-      const { data: profs, error: profsError } = await supabase
-        .from('profiles')
-        .select('id, email, name, first_name, last_name, role, gender, age')
-        .in('id', clientIds)
 
-      if (profsError) {
-        console.error('[profiles]', profsError)
+      const [profsResult, assessmentsResult] = await Promise.all([
+        supabase
+          .from('profiles')
+          .select('id, email, name, first_name, last_name, role, gender, age, client_status, is_paid_customer')
+          .in('id', clientIds),
+        supabase
+          .from('assessments')
+          .select('client_id')
+          .in('client_id', clientIds)
+          .eq('assessment_mode', 'self')
+          .eq('status', 'completed'),
+      ])
+
+      if (profsResult.error) {
+        console.error('[profiles]', profsResult.error)
       }
 
+      const completedSelfSet = new Set(
+        (assessmentsResult.data ?? []).map(a => profileMapKey(String(a.client_id)))
+      )
+
       const byId = new Map(
-        (profs ?? []).map(p => {
+        (profsResult.data ?? []).map(p => {
           const row = p as ClientProfileFields
           return [profileMapKey(String(row.id)), row]
         })
       )
+
       setLinkedClients(
         linkRows.map(row => {
           const p = byId.get(profileMapKey(String(row.client_id)))
+          const cs = p?.client_status ?? null
+          const paid = Boolean(p?.is_paid_customer)
+          const hasSelf = completedSelfSet.has(profileMapKey(String(row.client_id)))
           return {
             linkId: String(row.id),
             clientId: String(row.client_id),
@@ -100,6 +126,14 @@ export function TherapistClientsPage() {
             role: p?.role ?? 'client',
             gender: p?.gender ?? null,
             age: p?.age != null && Number.isFinite(Number(p.age)) ? Number(p.age) : null,
+            clientStatus: cs,
+            isPaidCustomer: paid,
+            hasCompletedSelfAssessment: hasSelf,
+            statusLabel: computeClientStatus({
+              clientStatus: cs,
+              isPaidCustomer: paid,
+              hasCompletedSelfAssessment: hasSelf,
+            }),
           }
         })
       )
@@ -143,15 +177,21 @@ export function TherapistClientsPage() {
   }, [user?.id, load])
 
   const filteredClients = useMemo(() => {
+    let result = linkedClients
+    if (statusFilter) {
+      result = result.filter(c => c.statusLabel === statusFilter)
+    }
     const q = search.trim().toLowerCase()
-    if (!q) return linkedClients
-    return linkedClients.filter(
-      c =>
-        c.displayName.toLowerCase().includes(q) ||
-        c.email.toLowerCase().includes(q) ||
-        formatGenderLabel(c.gender).toLowerCase().includes(q)
-    )
-  }, [linkedClients, search])
+    if (q) {
+      result = result.filter(
+        c =>
+          c.displayName.toLowerCase().includes(q) ||
+          c.email.toLowerCase().includes(q) ||
+          formatGenderLabel(c.gender).toLowerCase().includes(q)
+      )
+    }
+    return result
+  }, [linkedClients, search, statusFilter])
 
   const headerStagger = usePageStaggerVisible(true)
   const bodyStagger = usePageStaggerVisible(!loading, `${linkedClients.length}`)
@@ -160,16 +200,13 @@ export function TherapistClientsPage() {
     <div className="space-y-6">
       <div style={pageStaggerItemStyle(0, headerStagger)}>
         <h1 className="text-4xl font-bold text-foreground">Clients</h1>
-        <p className="mt-2 text-lg text-muted-foreground">People linked after using your assessment code.</p>
+        <p className="mt-2 text-lg text-muted-foreground">All clients linked to your account.</p>
       </div>
 
       <Card className={glassCard} style={pageStaggerItemStyle(1, headerStagger)}>
-        <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <CardTitle className="text-2xl text-foreground">My clients</CardTitle>
-            <CardDescription className="text-muted-foreground">Open a client to view report and plan.</CardDescription>
-          </div>
-          <div className="w-full shrink-0 sm:w-auto">{generateOtpTriggerButton}</div>
+        <CardHeader>
+          <CardTitle className="text-2xl text-foreground">My clients</CardTitle>
+          <CardDescription className="text-muted-foreground">Open a client to view their report and plan.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
           {loading ? (
@@ -182,7 +219,7 @@ export function TherapistClientsPage() {
               <div className="rounded-full bg-white/5 p-6 ring-1 ring-white/10">
                 <Users className="size-10 text-muted-foreground" aria-hidden />
               </div>
-              <p className="text-muted-foreground">No clients yet. Share an assessment OTP from the dashboard.</p>
+              <p className="text-muted-foreground">No clients linked yet.</p>
             </div>
           ) : (
             <>
@@ -200,10 +237,45 @@ export function TherapistClientsPage() {
                   aria-label="Search clients"
                 />
               </div>
+
+              {/* Status filter pills */}
+              <div
+                className="flex flex-wrap gap-2"
+                style={pageStaggerItemStyle(1, bodyStagger)}
+                role="group"
+                aria-label="Filter by status"
+              >
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={statusFilter === null ? 'zen' : 'zenOutline'}
+                  className="h-7 rounded-full px-3 text-xs"
+                  onClick={() => setStatusFilter(null)}
+                >
+                  All
+                </Button>
+                {ALL_STATUS_LABELS.map(s => {
+                  const meta = CLIENT_STATUS_META[s]
+                  const active = statusFilter === s
+                  return (
+                    <Button
+                      key={s}
+                      type="button"
+                      size="sm"
+                      variant={active ? 'zen' : 'zenOutline'}
+                      className={cn('h-7 rounded-full px-3 text-xs', !active && 'text-muted-foreground')}
+                      onClick={() => setStatusFilter(active ? null : s)}
+                    >
+                      {meta.label}
+                    </Button>
+                  )
+                })}
+              </div>
+
               {filteredClients.length === 0 ? (
                 <p
                   className="py-6 text-center text-sm text-muted-foreground"
-                  style={pageStaggerItemStyle(1, bodyStagger)}
+                  style={pageStaggerItemStyle(2, bodyStagger)}
                 >
                   No clients match your search.
                 </p>
@@ -211,8 +283,9 @@ export function TherapistClientsPage() {
                 <ul className="grid gap-4 sm:grid-cols-2">
                   {filteredClients.map((c, i) => {
                     const showEmailLine = c.email !== '—' && c.displayName !== c.email
+                    const statusMeta = CLIENT_STATUS_META[c.statusLabel]
                     return (
-                      <li key={c.linkId} style={pageStaggerItemStyle(i + 1, bodyStagger)}>
+                      <li key={c.linkId} style={pageStaggerItemStyle(i + 2, bodyStagger)}>
                         <Link
                           to={`/app/therapist/clients/${c.clientId}`}
                           className={cn(
@@ -256,9 +329,12 @@ export function TherapistClientsPage() {
                             </p>
                             <Badge
                               variant="outline"
-                              className="border-white/25 bg-white/5 capitalize text-foreground/90"
+                              className={cn(
+                                'capitalize',
+                                statusMeta.badgeClass
+                              )}
                             >
-                              {c.role}
+                              {statusMeta.label}
                             </Badge>
                           </div>
                         </Link>
@@ -271,8 +347,6 @@ export function TherapistClientsPage() {
           )}
         </CardContent>
       </Card>
-
-      {therapistOtpSessionDialog}
     </div>
   )
 }

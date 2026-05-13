@@ -1,7 +1,10 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1'
 import {
+  ZEN_MENTAL_REPROGRAM_SYSTEM_PROMPT,
   ZEN_REPORT_BODY_SYSTEM_PROMPT,
+  buildMentalReprogramUserMessage,
   buildReportUserMessage,
+  parseMentalReprogramContent,
   parseReportSections,
 } from '../_shared/zenReportPrompt.ts'
 
@@ -227,16 +230,65 @@ Deno.serve(async (req: Request) => {
 
     const sections = parseReportSections(content)
 
+    // Second OpenAI call: generate Mental Reprogramming section + affirmations
+    const mentalUserMessage = buildMentalReprogramUserMessage({
+      clientName: displayName,
+      age: clientAge,
+      gender: profile?.gender as string | null,
+      occupation: profile?.occupation as string | null,
+      totalScore,
+      balanceScore,
+      blossomScore,
+      blissScore,
+      keyConcerns,
+      clientObservations: (assessment.client_observations || null) as Record<string, unknown> | null,
+    })
+
+    const openaiMentalRes = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${openaiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.65,
+        messages: [
+          { role: 'system', content: ZEN_MENTAL_REPROGRAM_SYSTEM_PROMPT },
+          { role: 'user', content: mentalUserMessage },
+        ],
+      }),
+    })
+
+    let ritualSection: string | null = null
+    let affirmations: string[] | null = null
+
+    if (openaiMentalRes.ok) {
+      const openaiMentalJson = (await openaiMentalRes.json()) as {
+        choices?: { message?: { content?: string } }[]
+      }
+      const mentalRaw = openaiMentalJson.choices?.[0]?.message?.content?.trim()
+      if (mentalRaw) {
+        const mentalSections = parseMentalReprogramContent(mentalRaw)
+        ritualSection = mentalSections.ritualSection || null
+        affirmations = mentalSections.affirmations.length > 0 ? mentalSections.affirmations : null
+      }
+    } else {
+      const errText = await openaiMentalRes.text()
+      console.error('OpenAI mental reprogram error (non-fatal)', openaiMentalRes.status, errText)
+      // Non-fatal: report is already generated; mental reprogram will be available at plan generation
+    }
+
     const row = {
       assessment_id: assessmentId,
       client_id: user.id,
       therapist_id: null,
       content,
       report_section: sections.reportSection || null,
-      ritual_section: null,
+      ritual_section: ritualSection,
       plan_section: null,
       final_narrative_section: sections.finalNarrativeSection || null,
-      affirmations: null,
+      affirmations,
       imbalance_score: balanceScore,
       blossom_zone_emotional: blossomScore,
       bliss_zone_spiritual: blissScore,

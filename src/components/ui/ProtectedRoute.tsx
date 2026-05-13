@@ -20,7 +20,10 @@ export const ProtectedRoute = ({ children, allowedRoles }: ProtectedRouteProps) 
     return <Navigate to="/login" state={{ from: location }} replace />
   }
 
-  if (profileLoading) {
+  // Only block the page with a full-screen loader on the *initial* profile load.
+  // Background refetches (e.g. after profile updates) keep the existing profile
+  // in state, so we should keep rendering the current page instead of unmounting it.
+  if (profileLoading && !profile) {
     return (
       <div className="flex min-h-screen items-center justify-center text-foreground">Loading...</div>
     )

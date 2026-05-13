@@ -91,7 +91,7 @@ function parseCompletedAt(iso: string | null | undefined, fallback: string): str
 }
 
 /**
- * Supervised (linked clients needing observations) plus self-assessment leads (no linked therapist yet).
+ * Supervised assessments needing observations plus self-assessment reports waiting for a plan/status.
  * Sorted by completed_at descending (best-effort for ISO strings).
  */
 export async function fetchTherapistAllPending(therapistId: string): Promise<TherapistPendingItem[]> {
@@ -139,10 +139,6 @@ export async function fetchTherapistAllPending(therapistId: string): Promise<The
   })
 }
 
-export async function claimUnlinkedSelfLead(clientId: string) {
-  return supabase.rpc('claim_unlinked_self_lead', { p_client_id: clientId })
-}
-
 export type TherapistPendingDisplayRow = {
   kind: 'self_lead' | 'supervised'
   assessmentId: string
@@ -154,7 +150,7 @@ export type TherapistPendingDisplayRow = {
   reportId: string | null
 }
 
-/** Resolves display names for supervised items; self-lead rows already include contact fields from RPC. */
+/** Resolves display names for supervised items; self-assessment follow-up rows already include contact fields from RPC. */
 export async function fetchTherapistPendingDisplayRows(therapistId: string): Promise<TherapistPendingDisplayRow[]> {
   const pending = await fetchTherapistAllPending(therapistId)
   const supervisedClientIds = [

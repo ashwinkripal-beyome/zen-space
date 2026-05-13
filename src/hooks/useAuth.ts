@@ -8,7 +8,6 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { clearClientOtpVerifiedSession } from '@/lib/clientOtpSession'
 import { supabase } from '@/lib/supabase'
 import type { User } from '@supabase/supabase-js'
 
@@ -27,8 +26,14 @@ export interface Profile {
   avatar_url?: string
   occupation?: string
   company?: string
+  /** Client: structured company/department link (replaces free-text occupation). */
+  company_department_id?: string | null
+  /** Client: true when the user picked "Not listed here" instead of choosing a company. */
+  company_not_listed?: boolean
   /** Client: supervised assessments require this (set by any linked therapist, shared across links). */
   is_paid_customer?: boolean
+  /** True once a new client has been redirected to Assessments on first login. */
+  client_initial_login_redirect_done?: boolean
   /** Present on rows from `profiles` select; used to detect refetched data. */
   updated_at?: string
 }
@@ -41,12 +46,14 @@ export interface AuthState {
   profileLoading: boolean
 }
 
+type SignUpMeta = { firstName: string; lastName: string; phone: string }
+
 type AuthContextValue = AuthState & {
   signIn: (email: string, password: string) => Promise<{ error: null | { message: string } }>
   signUp: (
     email: string,
     password: string,
-    name: string
+    meta: SignUpMeta
   ) => Promise<{
     data: Awaited<ReturnType<typeof supabase.auth.signUp>>['data']
     error: null | { message: string }
@@ -71,6 +78,30 @@ function profileFromEnsureRpc(fromRpc: unknown): Profile | null {
   if (typeof o.id !== 'string') return null
   if (o.role !== 'admin' && o.role !== 'therapist' && o.role !== 'client') return null
   return row as Profile
+}
+
+/** Fill empty profile columns from signup `user_metadata` / auth email (legacy rows). */
+function signupMetadataPatchIfNeeded(user: User, row: Profile): Partial<Profile> | null {
+  const meta = user.user_metadata ?? {}
+  const patch: Partial<Profile> = {}
+
+  const authEmail = user.email?.trim() ?? ''
+  if (authEmail && !row.email?.trim()) patch.email = authEmail
+
+  const fn = typeof meta.first_name === 'string' ? meta.first_name.trim() : ''
+  if (fn && !row.first_name?.trim()) patch.first_name = fn
+
+  const ln = typeof meta.last_name === 'string' ? meta.last_name.trim() : ''
+  if (ln && !row.last_name?.trim()) patch.last_name = ln
+
+  const ph = typeof meta.phone_number === 'string' ? meta.phone_number.trim() : ''
+  if (ph && !row.phone_number?.trim()) patch.phone_number = ph
+
+  let nm = typeof meta.name === 'string' ? meta.name.trim() : ''
+  if (!nm && fn && ln) nm = `${fn} ${ln}`.trim()
+  if (nm && !row.name?.trim()) patch.name = nm
+
+  return Object.keys(patch).length ? patch : null
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -114,7 +145,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const user = state.user
 
     if (user) {
-      setState(s => ({ ...s, profileLoading: true, profile: null }))
+      // Keep the existing `profile` in state during a refetch so consumers (and
+      // any route guards) don't unmount the active page while we refresh.
+      setState(s => ({ ...s, profileLoading: true }))
 
       const fetchProfile = async () => {
         const { data: existing, error: selectError } = await supabase
@@ -130,6 +163,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         if (!selectError && existing) {
+          const patch = signupMetadataPatchIfNeeded(user, existing)
+          if (patch) {
+            const { error: patchErr } = await supabase
+              .from('profiles')
+              .update({ ...patch, updated_at: new Date().toISOString() })
+              .eq('id', user.id)
+            if (cancelled) return
+            if (!patchErr) {
+              setState(s => ({ ...s, profile: { ...existing, ...patch }, profileLoading: false }))
+              return
+            }
+            console.error('Profile signup metadata backfill error:', patchErr)
+          }
           setState(s => ({ ...s, profile: existing, profileLoading: false }))
           return
         }
@@ -148,11 +194,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.error('ensure_user_profile RPC:', rpcError)
         }
 
+        const meta = user.user_metadata ?? {}
         const { error: insertError } = await supabase.from('profiles').insert({
           id: user.id,
           email: user.email ?? '',
           role: roleFromAuthUser(user),
-          name: (typeof user.user_metadata?.name === 'string' ? user.user_metadata.name : null) || null,
+          name: (typeof meta.name === 'string' ? meta.name : null) || null,
+          first_name: (typeof meta.first_name === 'string' ? meta.first_name : null) || null,
+          last_name: (typeof meta.last_name === 'string' ? meta.last_name : null) || null,
+          phone_number: (typeof meta.phone_number === 'string' ? meta.phone_number : null) || null,
         })
 
         if (cancelled) return
@@ -198,19 +248,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error }
   }, [])
 
-  const signUp = useCallback(async (email: string, password: string, name: string) => {
+  const signUp = useCallback(async (email: string, password: string, meta: SignUpMeta) => {
+    const { firstName, lastName, phone } = meta
+    const name = [firstName.trim(), lastName.trim()].filter(Boolean).join(' ')
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: { name, role: 'client' },
+        data: { name, first_name: firstName.trim(), last_name: lastName.trim(), phone_number: phone.trim(), role: 'client' },
       },
     })
     return { data, error }
   }, [])
 
   const signOut = useCallback(async () => {
-    clearClientOtpVerifiedSession()
     await supabase.auth.signOut()
   }, [])
 

@@ -31,10 +31,17 @@ TRUNCATE TABLE
   public.therapist_session_joins,
   public.therapist_clients,
   public.therapist_otp_sessions,
+  public.therapist_inbox_bump,
   public.company_departments,
   public.companies,
   public.profiles
 RESTART IDENTITY CASCADE;
+
+-- Runtime singleton used to notify therapist dashboards/notification badges.
+-- Re-seed it after TRUNCATE so bump_therapist_inbox() can keep updating it.
+INSERT INTO public.therapist_inbox_bump (id, version)
+VALUES (1, 0)
+ON CONFLICT (id) DO UPDATE SET version = EXCLUDED.version;
 
 -- Legacy table name from early teardown scripts (only if the table exists):
 -- TRUNCATE TABLE public.therapist_email_otps RESTART IDENTITY CASCADE;

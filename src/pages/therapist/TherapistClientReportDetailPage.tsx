@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ChevronLeft, Download, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { PracticeDisclaimerDialog } from '@/components/PracticeDisclaimerDialog'
 import { ReportBody } from '@/components/ReportBody'
 import { Button } from '@/components/ui/button'
@@ -14,7 +15,7 @@ import {
   type BenchmarkSection,
 } from '@/data/benchmarkAssessment'
 import { supabase } from '@/lib/supabase'
-import { printZenPlanPdf } from '@/lib/zenPrintDocument'
+import { downloadZenPlanPdf } from '@/lib/zenPrintDocument'
 import { zenPrintPdfMetadata } from '@/lib/zenPrintPayloadHelpers'
 import {
   reportDetailTabButtonClassName,
@@ -59,6 +60,7 @@ export function TherapistClientReportDetailPage() {
   const [answersByQuestionId, setAnswersByQuestionId] = useState<Map<string, AnswerRow>>(new Map())
   const [tab, setTab] = useState<Tab>('report')
   const [fourfoldDisclaimerOpen, setFourfoldDisclaimerOpen] = useState(false)
+  const [pdfLoading, setPdfLoading] = useState(false)
   const staggerVisible = usePageStaggerVisible(!loading, `${reportId}-${Boolean(report)}-${forbidden}`)
 
   const load = useCallback(async () => {
@@ -254,15 +256,21 @@ export function TherapistClientReportDetailPage() {
   const finalContent = report.finalNarrativeSection || ''
   const planSection = report.planSection || ''
 
-  const handlePrintPdf = () => {
+  const handlePrintPdf = async () => {
+    if (pdfLoading) return
     const meta = zenPrintPdfMetadata(report.createdAt, clientPrintProfile, report.assessment)
-    printZenPlanPdf({
+    setPdfLoading(true)
+    const result = await downloadZenPlanPdf({
       reportHtml: reportContent,
       finalNarrativeHtml: finalContent || undefined,
       ritualHtml: ritualContent || undefined,
       planHtml: planSection || undefined,
       ...meta,
     })
+    setPdfLoading(false)
+    if (!result.ok) {
+      toast.error('Could not generate PDF. ' + (result.error ?? ''))
+    }
   }
 
   const openFourfoldTab = () => {
@@ -294,11 +302,15 @@ export function TherapistClientReportDetailPage() {
           type="button"
           variant="zenOutline"
           size="sm"
-          onClick={handlePrintPdf}
-          disabled={!reportContent && !ritualContent && !finalContent && !planSection}
+          onClick={() => void handlePrintPdf()}
+          disabled={(!reportContent && !ritualContent && !finalContent && !planSection) || pdfLoading}
         >
-          <Download className="mr-1.5 size-4" aria-hidden />
-          Download PDF
+          {pdfLoading ? (
+            <Loader2 className="mr-1.5 size-4 animate-spin" aria-hidden />
+          ) : (
+            <Download className="mr-1.5 size-4" aria-hidden />
+          )}
+          {pdfLoading ? 'Generating…' : 'Download PDF'}
         </Button>
       </div>
 

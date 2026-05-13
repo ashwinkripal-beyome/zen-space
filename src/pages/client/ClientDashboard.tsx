@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
-import { ClipboardPenLine, Loader2, Mail, Phone, Sparkles, UserPlus } from 'lucide-react'
+import { ClipboardPenLine, Loader2, Mail, Phone, Sparkles } from 'lucide-react'
 import { AnimatedScoreMeter } from '@/components/AnimatedScoreMeter'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -89,7 +89,6 @@ type LinkRow = { therapist_id: string; created_at: string }
 interface TherapistInfo {
   id: string
   name: string
-  gender: string | null
   phone: string | null
   email: string | null
 }
@@ -106,11 +105,6 @@ function displayTherapistName(row: {
   if (row.name?.trim()) return row.name.trim()
   if (row.email) return row.email.split('@')[0] ?? 'Therapist'
   return 'Therapist'
-}
-
-function formatGender(g: string | null): string | null {
-  if (!g) return null
-  return g.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
 function dayOrderFromParsed(days: ReturnType<typeof parsePlanDays>) {
@@ -141,7 +135,7 @@ function formatActivityTitle(raw: string | null): string | null {
 
 export function ClientDashboard() {
   const { profile, user } = useAuth()
-  const { therapistSectionLocked, hasTherapists, therapistResolutionPending } = useClientOnboarding()
+  useClientOnboarding() // keep provider subscription
   const availability = useAssessmentAvailability()
   const greetingFirst = dashboardGreetingFirstName(profile ?? null)
   const [stripLoading, setStripLoading] = useState(true)
@@ -194,7 +188,7 @@ export function ClientDashboard() {
 
       const { data: profiles, error: pErr } = await supabase
         .from('profiles')
-        .select('id, first_name, last_name, name, email, gender, phone_number')
+        .select('id, first_name, last_name, name, email, phone_number')
         .in('id', ids)
 
       if (pErr) {
@@ -209,13 +203,11 @@ export function ClientDashboard() {
           last_name?: string | null
           name?: string | null
           email?: string | null
-          gender?: string | null
           phone_number?: string | null
         }
         return {
           id: row.id,
           name: displayTherapistName(row),
-          gender: row.gender ?? null,
           phone: row.phone_number ?? null,
           email: row.email ?? null,
         }
@@ -358,11 +350,6 @@ export function ClientDashboard() {
     Boolean(showCards && user?.id && !stripLoading),
     stripLoading ? 'loading' : 'dashboard-content'
   )
-
-  const therapistCardLockedEmpty =
-    therapistSectionLocked && !therapistsLoading && linkedTherapists.length === 0
-
-  const planTherapistLinked = hasTherapists === true
 
   const allPlanWeeksMarkedOnDashboard = ongoing.hasPlanDays && ongoing.activeDay === null
 
@@ -591,18 +578,7 @@ export function ClientDashboard() {
                   className={cn(cardPrimary, cardLayout)}
                   style={pageStaggerItemStyle(1, dashboardStaggerVisible)}
                 >
-                  {therapistResolutionPending ? (
-                    <CardContent className="flex flex-1 flex-col justify-center py-6">
-                      <p className="text-sm text-muted-foreground">Loading…</p>
-                    </CardContent>
-                  ) : !planTherapistLinked ? (
-                    <CardContent className="flex flex-1 flex-col justify-center gap-3 py-6">
-                      <p className="text-pretty leading-relaxed text-muted-foreground">
-                        Connect with a Zen Specialist at your nearest Zen Garden to link your account and access your
-                        18-week plan here.
-                      </p>
-                    </CardContent>
-                  ) : !ongoing.hasPlanDays ? (
+                  {!ongoing.hasPlanDays ? (
                     <CardContent className="flex flex-1 flex-col justify-center py-6">
                       <p className="text-pretty leading-relaxed text-muted-foreground">
                         No active plan. Take an assessment to create your 18-week plan.
@@ -693,15 +669,11 @@ export function ClientDashboard() {
                 {renderNavCard(assessmentCard, 2)}
 
                 <Card
-                  className={cn(
-                    cardSupport,
-                    cardLayout,
-                    therapistCardLockedEmpty && 'pointer-events-none opacity-40'
-                  )}
+                  className={cn(cardSupport, cardLayout)}
                   style={pageStaggerItemStyle(3, dashboardStaggerVisible)}
                 >
                   <CardHeader className="shrink-0">
-                    <CardTitle className="text-xl">Therapist</CardTitle>
+                    <CardTitle className="text-xl">Contact</CardTitle>
                   </CardHeader>
                   <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
                     {therapistsLoading ? (
@@ -709,9 +681,6 @@ export function ClientDashboard() {
                     ) : primaryTherapist ? (
                       <div className="flex-1 space-y-3">
                         <p className="text-lg font-semibold text-foreground">{primaryTherapist.name}</p>
-                        {primaryTherapist.gender ? (
-                          <p className="text-sm text-muted-foreground">{formatGender(primaryTherapist.gender)}</p>
-                        ) : null}
                         {primaryTherapist.phone ? (
                           <p className="flex items-center gap-2 text-sm text-muted-foreground">
                             <Phone className="size-3.5 text-sky-300/70" aria-hidden />
@@ -724,33 +693,11 @@ export function ClientDashboard() {
                             {primaryTherapist.email}
                           </p>
                         ) : null}
-                        {linkedTherapists.length > 1 ? (
-                          <p className="pt-1 text-xs text-muted-foreground">
-                            <Link to="/app/client/therapists" className="text-sky-300 underline underline-offset-2">
-                              View all linked therapists
-                            </Link>
-                          </p>
-                        ) : null}
                       </div>
                     ) : (
-                      <>
-                        <p className="flex-1 text-pretty leading-relaxed text-muted-foreground">
-                          Link a therapist with their code to share your progress.
-                        </p>
-                        {therapistSectionLocked ? (
-                          <Button type="button" disabled variant="zenOutline" className="mt-auto w-full gap-2">
-                            <UserPlus className="size-4" aria-hidden />
-                            Add therapist
-                          </Button>
-                        ) : (
-                          <Button asChild variant="zenOutline" className="mt-auto w-full">
-                            <Link to="/app/client/otp" className="gap-2">
-                              <UserPlus className="size-4" aria-hidden />
-                              Add therapist
-                            </Link>
-                          </Button>
-                        )}
-                      </>
+                      <p className="flex-1 text-pretty leading-relaxed text-muted-foreground">
+                        No therapist assigned yet. Contact your Zen Garden centre to get linked.
+                      </p>
                     )}
                   </CardContent>
                 </Card>

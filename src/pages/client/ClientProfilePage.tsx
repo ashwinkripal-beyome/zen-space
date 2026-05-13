@@ -8,9 +8,14 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { CLIENT_GENDER_OPTIONS } from '@/data/clientProfileOptions'
 import { ChangePasswordCard } from '@/components/ChangePasswordCard'
+import {
+  CompanyDepartmentPicker,
+  type CompanySelectionState,
+} from '@/components/CompanyDepartmentPicker'
 import { useAuth } from '@/hooks/useAuth'
 import { pageStaggerItemStyle, usePageStaggerVisible } from '@/hooks/usePageStaggerVisible'
 import { isClientProfileComplete } from '@/lib/clientProfileComplete'
+import { setClientCompanySelection } from '@/lib/companyDirectory'
 import { dobSelectPartsFromProfile, genderValueForSelect, profileFormSyncKey } from '@/lib/profileFormValues'
 import { supabase } from '@/lib/supabase'
 
@@ -41,6 +46,9 @@ export function ClientProfilePage() {
   const { user, profile, refetchProfile } = useAuth()
   const [firstName, setFirstName] = useState(() => profile?.first_name ?? '')
   const [lastName, setLastName] = useState(() => profile?.last_name ?? '')
+  const [email, setEmail] = useState(
+    () => profile?.email?.trim() || user?.email?.trim() || ''
+  )
   const [gender, setGender] = useState(() => (profile ? genderValueForSelect(profile.gender) : ''))
   const [dobDay, setDobDay] = useState(() => {
     if (!profile) return ''
@@ -55,8 +63,11 @@ export function ClientProfilePage() {
     return dobSelectPartsFromProfile(profile.dob, profile.age)?.year ?? ''
   })
   const [phone, setPhone] = useState(() => profile?.phone_number ?? '')
-  const [occupation, setOccupation] = useState(() => profile?.occupation ?? '')
-  const [company, setCompany] = useState(() => profile?.company ?? '')
+  const [companySelection, setCompanySelection] = useState<CompanySelectionState>(() => ({
+    companyId: null,
+    departmentId: profile?.company_department_id ?? null,
+    notListed: profile?.company_not_listed === true,
+  }))
   const [saving, setSaving] = useState(false)
   const staggerVisible = usePageStaggerVisible(true)
 
@@ -65,10 +76,14 @@ export function ClientProfilePage() {
     if (!profile) return
     setFirstName(profile.first_name ?? '')
     setLastName(profile.last_name ?? '')
+    setEmail(profile.email?.trim() || user?.email?.trim() || '')
     setGender(genderValueForSelect(profile.gender))
     setPhone(profile.phone_number ?? '')
-    setOccupation(profile.occupation ?? '')
-    setCompany(profile.company ?? '')
+    setCompanySelection({
+      companyId: null,
+      departmentId: profile.company_department_id ?? null,
+      notListed: profile.company_not_listed === true,
+    })
 
     const dobParts = dobSelectPartsFromProfile(profile.dob, profile.age)
     if (dobParts) {
@@ -80,7 +95,7 @@ export function ClientProfilePage() {
       setDobMonth('')
       setDobDay('')
     }
-  }, [profileSync, profile])
+  }, [profileSync, profile, user?.email])
 
   const maxDays = daysInMonth(Number(dobMonth), Number(dobYear))
 
@@ -90,6 +105,11 @@ export function ClientProfilePage() {
 
     if (!firstName.trim() || !lastName.trim()) {
       toast.error('First name and last name are required.')
+      return
+    }
+    const emailTrim = email.trim()
+    if (!emailTrim || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrim)) {
+      toast.error('Please enter a valid email.')
       return
     }
     if (!gender) {
@@ -111,20 +131,24 @@ export function ClientProfilePage() {
 
     const dobStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
 
+    if (!companySelection.notListed && companySelection.companyId && !companySelection.departmentId) {
+      toast.error('Please select your department or choose "Not listed here".')
+      return
+    }
+
     setSaving(true)
     const wasIncomplete = profile ? !isClientProfileComplete(profile) : true
     try {
       const { error } = await supabase
         .from('profiles')
         .update({
+          email: emailTrim,
           first_name: firstName.trim() || null,
           last_name: lastName.trim() || null,
           gender: gender || null,
           dob: dobStr,
           age,
           phone_number: phone.trim() || null,
-          occupation: occupation.trim() || null,
-          company: company.trim() || null,
           updated_at: new Date().toISOString(),
         })
         .eq('id', user.id)
@@ -133,12 +157,30 @@ export function ClientProfilePage() {
         toast.error(error.message)
         return
       }
+
+      if (companySelection.notListed) {
+        await setClientCompanySelection({
+          companyId: null,
+          departmentId: null,
+          notListed: true,
+        })
+      } else if (companySelection.companyId && companySelection.departmentId) {
+        await setClientCompanySelection({
+          companyId: companySelection.companyId,
+          departmentId: companySelection.departmentId,
+          notListed: false,
+        })
+      }
+
       toast.success('Profile updated.')
       await refetchProfile()
 
       if (wasIncomplete) {
         navigate('/app/client', { replace: true })
       }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not save your profile.'
+      toast.error(message)
     } finally {
       setSaving(false)
     }
@@ -187,6 +229,19 @@ export function ClientProfilePage() {
                 id="ln"
                 value={lastName}
                 onChange={e => setLastName(e.target.value)}
+                className="border-white/30 bg-white/15 text-foreground"
+                required
+              />
+            </div>
+
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
                 className="border-white/30 bg-white/15 text-foreground"
                 required
               />
@@ -263,24 +318,11 @@ export function ClientProfilePage() {
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="occupation">Occupation</Label>
-              <Input
-                id="occupation"
-                value={occupation}
-                onChange={e => setOccupation(e.target.value)}
-                placeholder="e.g. Software Engineer, Teacher…"
-                className="border-white/30 bg-white/15 text-foreground"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="company">Company</Label>
-              <Input
-                id="company"
-                value={company}
-                onChange={e => setCompany(e.target.value)}
-                placeholder="e.g. Google, Self-employed…"
-                className="border-white/30 bg-white/15 text-foreground"
+            <div className="space-y-2 sm:col-span-2">
+              <CompanyDepartmentPicker
+                value={companySelection}
+                onChange={setCompanySelection}
+                idPrefix="profile-company"
               />
             </div>
 

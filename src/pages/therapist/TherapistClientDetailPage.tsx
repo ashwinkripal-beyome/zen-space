@@ -2,8 +2,16 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { CalendarDays, Loader2, Mail, Phone, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { useAuth } from '@/hooks/useAuth'
 import { pageStaggerItemStyle, usePageStaggerVisible } from '@/hooks/usePageStaggerVisible'
 import {
@@ -12,6 +20,7 @@ import {
   formatGenderLabel,
   type ProfileNameFields,
 } from '@/lib/clientDisplayName'
+import { CLIENT_STATUS_META, computeClientStatus, type ClientStatusLabel } from '@/lib/clientStatus'
 import { messageFromFunctionInvokeFailure } from '@/lib/functionInvokeError'
 import { supabase } from '@/lib/supabase'
 import {
@@ -22,7 +31,6 @@ import {
 import { cn } from '@/lib/utils'
 
 const glassReport = cn('zen-glass-card ring-0 shadow-none', 'zen-ring-primary')
-const glassObs = cn('zen-glass-card ring-0 shadow-none', 'zen-ring-secondary')
 const glassPlan = cn('zen-glass-card ring-0 shadow-none', 'zen-ring-secondary')
 const glassControls = cn('zen-glass-card ring-0 shadow-none', 'zen-ring-secondary')
 const glassProfile = cn('zen-glass-card ring-0 shadow-none', 'zen-ring-primary')
@@ -61,10 +69,40 @@ type ClientProfileRow = ProfileNameFields & {
   age: number | null
   phone_number: string | null
   dob: string | null
-  occupation: string | null
   company: string | null
+  company_department_name: string | null
+  company_not_listed: boolean
   is_paid_customer: boolean
+  client_status: string | null
 }
+
+type MarkAsOption = {
+  value: 'pro' | 'contacted' | 'dropped'
+  label: string
+  description: string
+  badgeClass: string
+}
+
+const MARK_AS_OPTIONS: MarkAsOption[] = [
+  {
+    value: 'pro',
+    label: 'Mark as paid',
+    description: 'Mark this client as a paid customer to enable supervised assessments.',
+    badgeClass: CLIENT_STATUS_META.pro.badgeClass,
+  },
+  {
+    value: 'contacted',
+    label: 'Mark as contacted',
+    description: 'Record that this client has been contacted.',
+    badgeClass: CLIENT_STATUS_META.contacted.badgeClass,
+  },
+  {
+    value: 'dropped',
+    label: 'Mark as dropped',
+    description: 'Mark this client as dropped from your pipeline.',
+    badgeClass: CLIENT_STATUS_META.dropped.badgeClass,
+  },
+]
 
 export function TherapistClientDetailPage() {
   const { user } = useAuth()
@@ -72,7 +110,9 @@ export function TherapistClientDetailPage() {
   const [loading, setLoading] = useState(true)
   const [forbidden, setForbidden] = useState(false)
   const [profile, setProfile] = useState<ClientProfileRow | null>(null)
-  const [savingPaidCustomer, setSavingPaidCustomer] = useState(false)
+  const [savingStatus, setSavingStatus] = useState(false)
+  const [markAsOpen, setMarkAsOpen] = useState(false)
+  const [hasCompletedSelfAssessment, setHasCompletedSelfAssessment] = useState(false)
 
   const load = useCallback(async () => {
     if (!user?.id || !clientId) {
@@ -101,27 +141,45 @@ export function TherapistClientDetailPage() {
         return
       }
 
-      const { data: prof, error: profErr } = await supabase
-        .from('profiles')
-        .select(
-          'id, email, name, first_name, last_name, gender, age, phone_number, dob, occupation, company, is_paid_customer'
-        )
-        .eq('id', clientId)
-        .maybeSingle()
+      const [profResult, selfAssessmentResult] = await Promise.all([
+        supabase
+          .from('profiles')
+          .select(
+            'id, email, name, first_name, last_name, gender, age, phone_number, dob, company, company_not_listed, is_paid_customer, client_status, company_department:company_departments(name)'
+          )
+          .eq('id', clientId)
+          .maybeSingle(),
+        supabase
+          .from('assessments')
+          .select('id')
+          .eq('client_id', clientId)
+          .eq('assessment_mode', 'self')
+          .eq('status', 'completed')
+          .limit(1)
+          .maybeSingle(),
+      ])
 
-      if (profErr) {
-        console.error('[profiles]', profErr)
+      if (profResult.error) {
+        console.error('[profiles]', profResult.error)
         setProfile(null)
         return
       }
 
-      if (!prof) {
+      if (!profResult.data) {
         setProfile(null)
         return
       }
 
-      const p = prof as Record<string, unknown>
+      const p = profResult.data as Record<string, unknown>
       const paid = Boolean(p.is_paid_customer)
+      const departmentRel = p.company_department as { name?: string } | { name?: string }[] | null | undefined
+      const departmentName = Array.isArray(departmentRel)
+        ? typeof departmentRel[0]?.name === 'string'
+          ? (departmentRel[0]!.name as string)
+          : null
+        : typeof departmentRel?.name === 'string'
+          ? (departmentRel.name as string)
+          : null
       setProfile({
         id: String(p.id),
         email: typeof p.email === 'string' ? p.email : '',
@@ -132,10 +190,13 @@ export function TherapistClientDetailPage() {
         age: p.age != null && Number.isFinite(Number(p.age)) ? Number(p.age) : null,
         phone_number: typeof p.phone_number === 'string' ? p.phone_number : null,
         dob: typeof p.dob === 'string' ? p.dob : null,
-        occupation: typeof p.occupation === 'string' ? p.occupation : null,
         company: typeof p.company === 'string' ? p.company : null,
+        company_department_name: departmentName,
+        company_not_listed: Boolean(p.company_not_listed),
         is_paid_customer: paid,
+        client_status: typeof p.client_status === 'string' ? p.client_status : null,
       })
+      setHasCompletedSelfAssessment(Boolean(selfAssessmentResult.data?.id))
     } finally {
       setLoading(false)
     }
@@ -151,9 +212,10 @@ export function TherapistClientDetailPage() {
   const [supervisedEligibility, setSupervisedEligibility] = useState<SupervisedEligibility | null>(null)
   const [enablingSupervised, setEnablingSupervised] = useState(false)
 
-  /** Latest completed self assessment id when its report has no 18-week plan yet (therapist can generate). */
+  /** Latest completed self assessment id when its report has no 18-week plan yet. */
   const [selfAssessmentNeedingPlan, setSelfAssessmentNeedingPlan] = useState<string | null>(null)
-  const [generatingPlan, setGeneratingPlan] = useState(false)
+  const [latestReportLoaded, setLatestReportLoaded] = useState(false)
+  const [hasLatestReport, setHasLatestReport] = useState(false)
 
   const loadPlanCta = useCallback(async () => {
     if (!clientId) {
@@ -199,6 +261,7 @@ export function TherapistClientDetailPage() {
 
   const loadOverrides = useCallback(async () => {
     if (!user?.id || !clientId) return
+    setLatestReportLoaded(false)
 
     const [selfA, supA, overrideLatest, latestReport] = await Promise.all([
       supabase
@@ -241,6 +304,8 @@ export function TherapistClientDetailPage() {
 
     const reportRow = latestReport.data as { id?: string; created_at?: string; plan_section?: string } | null
     const reportId = reportRow?.id
+    setHasLatestReport(Boolean(reportId))
+    setLatestReportLoaded(true)
     let planCompletedDays: unknown = []
     if (reportId) {
       const prog = await supabase
@@ -273,30 +338,6 @@ export function TherapistClientDetailPage() {
     if (profile) void loadPlanCta()
   }, [profile, loadPlanCta])
 
-  const handleGenerate18WeekPlanForSelf = async () => {
-    if (!selfAssessmentNeedingPlan) return
-    setGeneratingPlan(true)
-    try {
-      const { data, error, response: fnResponse } = await supabase.functions.invoke('generate-zen-plan', {
-        body: { assessment_id: selfAssessmentNeedingPlan },
-      })
-      if (error) {
-        const msg = await messageFromFunctionInvokeFailure(error, fnResponse)
-        toast.error(msg)
-        return
-      }
-      if (data && typeof data === 'object' && 'error' in data && (data as { error?: string }).error) {
-        const err = (data as { error?: string }).error
-        toast.error(typeof err === 'string' ? err : 'Plan generation failed')
-        return
-      }
-      toast.success('18-week plan generated')
-      setSelfAssessmentNeedingPlan(null)
-    } finally {
-      setGeneratingPlan(false)
-    }
-  }
-
   const handleEnableSupervisedAssessment = async () => {
     if (!user?.id || !clientId) return
     setEnablingSupervised(true)
@@ -320,26 +361,85 @@ export function TherapistClientDetailPage() {
     setEnablingSupervised(false)
   }
 
-  const handleSetPaidCustomer = async (paid: boolean) => {
+  const handleSetStatus = async (newStatus: 'pro' | 'contacted' | 'dropped') => {
     if (!clientId) return
-    setSavingPaidCustomer(true)
-    const { error } = await supabase.rpc('set_client_is_paid_customer', {
+    setSavingStatus(true)
+    const { error } = await supabase.rpc('set_client_status', {
       p_client_id: clientId,
-      p_is_paid: paid,
+      p_status: newStatus,
     })
     if (error) {
       toast.error(error.message)
     } else {
-      setProfile(p => (p ? { ...p, is_paid_customer: paid } : p))
-      toast.success(
-        paid
-          ? 'This client is marked as a paid customer (visible to all linked therapists)'
-          : 'Paid customer status removed (visible to all linked therapists)'
-      )
+      const isPaid = newStatus === 'pro'
+      setProfile(p => (p ? { ...p, client_status: newStatus, is_paid_customer: isPaid } : p))
+      const labels: Record<string, string> = {
+        pro: 'Client marked as paid (Pro)',
+        contacted: 'Client marked as contacted',
+        dropped: 'Client marked as dropped',
+      }
+      toast.success(labels[newStatus] ?? 'Status updated')
       void loadOverrides()
+
+      // When marking as paid: auto-generate the 18-week plan if a self-assessment report
+      // exists but has no plan yet.
+      if (newStatus === 'pro') {
+        void (async () => {
+          try {
+            const { data: selfA } = await supabase
+              .from('assessments')
+              .select('id')
+              .eq('client_id', clientId)
+              .eq('assessment_mode', 'self')
+              .eq('status', 'completed')
+              .order('completed_at', { ascending: false })
+              .limit(1)
+              .maybeSingle()
+
+            if (!selfA?.id) return
+
+            const { data: rep } = await supabase
+              .from('reports')
+              .select('plan_section')
+              .eq('assessment_id', selfA.id)
+              .maybeSingle()
+
+            // Only proceed if report exists but plan is missing
+            if (!rep || ((rep.plan_section as string) ?? '').trim().length > 0) return
+
+            const { data, error: planError, response: planFnResponse } = await supabase.functions.invoke(
+              'generate-zen-plan',
+              { body: { assessment_id: selfA.id } }
+            )
+            if (planError) {
+              const msg = await messageFromFunctionInvokeFailure(planError, planFnResponse)
+              toast.error(`Auto plan generation failed: ${msg}`)
+              return
+            }
+            if (data && typeof data === 'object' && 'error' in data && (data as { error?: string }).error) {
+              toast.error(
+                `Auto plan generation failed: ${(data as { error?: string }).error ?? 'Unknown error'}`
+              )
+              return
+            }
+            toast.success('18-week plan generated automatically')
+            setSelfAssessmentNeedingPlan(null)
+            void loadOverrides()
+          } catch (planErr) {
+            console.error('[auto plan generation on paid]', planErr)
+          }
+        })()
+      }
     }
-    setSavingPaidCustomer(false)
+    setSavingStatus(false)
+    setMarkAsOpen(false)
   }
+
+  const effectiveStatus: ClientStatusLabel = computeClientStatus({
+    clientStatus: profile?.client_status,
+    isPaidCustomer: profile?.is_paid_customer,
+    hasCompletedSelfAssessment,
+  })
 
   const primaryLabel = formatClientDisplayName(profile ?? undefined)
   const emailTrimmed = profile?.email?.trim() ?? ''
@@ -388,6 +488,8 @@ export function TherapistClientDetailPage() {
     )
   }
 
+  const statusMeta = CLIENT_STATUS_META[effectiveStatus]
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-3" style={pageStaggerItemStyle(0, staggerVisible)}>
@@ -398,7 +500,12 @@ export function TherapistClientDetailPage() {
 
       <Card className={glassProfile} style={pageStaggerItemStyle(1, staggerVisible)}>
         <CardContent className="space-y-3 pt-6">
-          <p className="text-xl font-semibold text-foreground sm:text-2xl">{primaryLabel}</p>
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="text-xl font-semibold text-foreground sm:text-2xl">{primaryLabel}</p>
+            <Badge variant="outline" className={cn('capitalize', statusMeta.badgeClass)}>
+              {statusMeta.label}
+            </Badge>
+          </div>
           {emailTrimmed ? (
             <p className="flex items-center gap-2 text-sm text-muted-foreground">
               <Mail className="size-3.5 shrink-0 text-sky-300/70" aria-hidden />
@@ -423,10 +530,16 @@ export function TherapistClientDetailPage() {
             </p>
           ) : null}
           <p className="text-sm text-muted-foreground">
-            <span className="text-muted-foreground">Occupation</span> · {profile.occupation?.trim() || '—'}
+            <span className="text-muted-foreground">Company</span> ·{' '}
+            {profile.company_not_listed
+              ? 'Not listed'
+              : profile.company?.trim() || '—'}
           </p>
           <p className="text-sm text-muted-foreground">
-            <span className="text-muted-foreground">Company</span> · {profile.company?.trim() || '—'}
+            <span className="text-muted-foreground">Department</span> ·{' '}
+            {profile.company_not_listed
+              ? 'Not listed'
+              : profile.company_department_name?.trim() || '—'}
           </p>
         </CardContent>
       </Card>
@@ -438,62 +551,45 @@ export function TherapistClientDetailPage() {
         >
           <CardHeader className="flex-1">
             <CardTitle className="text-foreground">Reports</CardTitle>
-            <CardDescription className="text-muted-foreground">Zen Plan reports &amp; assessment answers</CardDescription>
+            <CardDescription className="text-muted-foreground">
+              {latestReportLoaded
+                ? hasLatestReport
+                  ? 'Zen Plan reports & assessment answers'
+                  : 'This client has not taken an assessment yet.'
+                : 'Checking assessment status…'}
+            </CardDescription>
           </CardHeader>
-          <CardContent className="mt-auto pt-0">
-            <Button asChild variant="zen" className="w-full sm:w-auto">
-              <Link to={`/app/therapist/clients/${clientId}/reports`}>Open reports</Link>
-            </Button>
-          </CardContent>
+          {latestReportLoaded && hasLatestReport ? (
+            <CardContent className="mt-auto pt-0">
+              <Button asChild variant="zen" className="w-full sm:w-auto">
+                <Link to={`/app/therapist/clients/${clientId}/reports`}>Open reports</Link>
+              </Button>
+            </CardContent>
+          ) : null}
         </Card>
         <Card className={cn(glassPlan, 'h-full')} style={pageStaggerItemStyle(3, staggerVisible)}>
           <CardHeader className="flex-1">
             <CardTitle className="flex items-center gap-2 text-foreground">
               <CalendarDays className="size-4 text-sky-300" aria-hidden />
-              Your Personalized Plan
+              Personalized Plan
             </CardTitle>
             <CardDescription className="text-muted-foreground">
-              {selfAssessmentNeedingPlan
-                ? 'This client has a self-assessment report but no 18-week plan yet. You can generate it here.'
-                : 'Plan progress and daily activities'}
+              {latestReportLoaded
+                ? hasLatestReport
+                  ? selfAssessmentNeedingPlan
+                    ? 'This client has a self-assessment report, but no 18-week plan has been generated yet.'
+                    : 'Plan progress and daily activities'
+                  : 'This client does not have a personalized plan yet.'
+                : 'Checking assessment status…'}
             </CardDescription>
           </CardHeader>
-          <CardContent className="mt-auto flex flex-col gap-2 pt-0 sm:flex-row sm:flex-wrap">
-            {selfAssessmentNeedingPlan ? (
-              <Button
-                type="button"
-                variant="zen"
-                className="w-full sm:w-auto"
-                disabled={generatingPlan}
-                onClick={() => void handleGenerate18WeekPlanForSelf()}
-              >
-                {generatingPlan ? (
-                  <>
-                    <Loader2 className="mr-1.5 size-4 animate-spin" aria-hidden />
-                    Generating…
-                  </>
-                ) : (
-                  'Generate 18-week plan'
-                )}
+          {latestReportLoaded && hasLatestReport ? (
+            <CardContent className="mt-auto flex flex-col gap-2 pt-0 sm:flex-row sm:flex-wrap">
+              <Button asChild variant="zenOutline" className="w-full sm:w-auto">
+                <Link to={`/app/therapist/clients/${clientId}/plan`}>Open plan</Link>
               </Button>
-            ) : null}
-            <Button asChild variant="zenOutline" className="w-full sm:w-auto">
-              <Link to={`/app/therapist/clients/${clientId}/plan`}>Open plan</Link>
-            </Button>
-          </CardContent>
-        </Card>
-        <Card className={cn(glassObs, 'h-full')} style={pageStaggerItemStyle(4, staggerVisible)}>
-          <CardHeader className="flex-1">
-            <CardTitle className="text-foreground">Observations</CardTitle>
-            <CardDescription className="text-muted-foreground">
-              Generate reports for completed supervised assessments
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="mt-auto pt-0">
-            <Button asChild variant="zenOutline" className="w-full sm:w-auto">
-              <Link to={`/app/therapist/clients/${clientId}/observations`}>Open observations</Link>
-            </Button>
-          </CardContent>
+            </CardContent>
+          ) : null}
         </Card>
       </div>
 
@@ -509,26 +605,23 @@ export function TherapistClientDetailPage() {
         <CardContent className="space-y-4">
           <div className="flex flex-col gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="text-sm font-medium text-foreground">Paid customer</p>
+              <p className="text-sm font-medium text-foreground">Client status</p>
               <p className="text-xs text-muted-foreground">
-                Mark this client as a paid customer to enable supervised assessments.
+                Current status:{' '}
+                <Badge variant="outline" className={cn('ml-1 capitalize', statusMeta.badgeClass)}>
+                  {statusMeta.label}
+                </Badge>
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <Button
                 type="button"
                 size="sm"
-                variant={profile.is_paid_customer ? 'zenOutline' : 'zen'}
-                disabled={savingPaidCustomer}
-                onClick={() => void handleSetPaidCustomer(!profile.is_paid_customer)}
+                variant="zen"
+                disabled={savingStatus}
+                onClick={() => setMarkAsOpen(true)}
               >
-                {savingPaidCustomer ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : profile.is_paid_customer ? (
-                  'Mark as unpaid customer'
-                ) : (
-                  'Mark as paid customer'
-                )}
+                {savingStatus ? <Loader2 className="size-3.5 animate-spin" /> : 'Mark as'}
               </Button>
             </div>
           </div>
@@ -540,7 +633,7 @@ export function TherapistClientDetailPage() {
                 : supervisedLastCompleted
                   ? "Not available — self assessment isn't offered after a supervised assessment."
                   : supervisedEligibility?.blockedReason === 'not_paid'
-                    ? 'Until you mark this client as a paid customer, they can start the one-time self assessment from the app. After you mark them as paid, they should use supervised assessments.'
+                    ? 'Until you mark this client as paid, they can start the one-time self assessment from the app. After you mark them as paid, they should use supervised assessments.'
                     : 'The client can start a self assessment from their app until they have a completed self or supervised assessment.'}
             </p>
           </div>
@@ -571,6 +664,57 @@ export function TherapistClientDetailPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Mark as dialog — styled like the assessment disclaimer */}
+      <Dialog open={markAsOpen} onOpenChange={setMarkAsOpen}>
+        <DialogContent
+          className="zen-glass-card rounded-2xl border-white/15 text-foreground"
+        >
+          <DialogHeader>
+            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Client status
+            </p>
+            <DialogTitle className="text-foreground">Mark as</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            {MARK_AS_OPTIONS.map(opt => (
+              <button
+                key={opt.value}
+                type="button"
+                disabled={savingStatus}
+                onClick={() => void handleSetStatus(opt.value)}
+                className={cn(
+                  'w-full rounded-xl border px-4 py-3 text-left transition-all',
+                  'hover:bg-white/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30',
+                  effectiveStatus === opt.value
+                    ? 'border-white/25 bg-white/[0.06]'
+                    : 'border-white/10 bg-white/[0.03]'
+                )}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-medium text-foreground">{opt.label}</span>
+                  {effectiveStatus === opt.value && (
+                    <Badge variant="outline" className={cn('shrink-0 capitalize', opt.badgeClass)}>
+                      Current
+                    </Badge>
+                  )}
+                </div>
+                <p className="mt-0.5 text-xs text-muted-foreground">{opt.description}</p>
+              </button>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="zenOutline"
+              disabled={savingStatus}
+              onClick={() => setMarkAsOpen(false)}
+            >
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

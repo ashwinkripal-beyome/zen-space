@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { Bell, Loader2, Mail, Phone, UserPlus } from 'lucide-react'
-import { toast } from 'sonner'
+import { Link } from 'react-router-dom'
+import { Bell, Loader2, Mail, Phone } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -9,7 +8,6 @@ import { useAuth } from '@/hooks/useAuth'
 import { useTherapistPendingRealtime } from '@/hooks/useTherapistPendingRealtime'
 import { pageStaggerItemStyle, usePageStaggerVisible } from '@/hooks/usePageStaggerVisible'
 import {
-  claimUnlinkedSelfLead,
   fetchTherapistPendingDisplayRows,
   type TherapistPendingDisplayRow,
 } from '@/lib/therapistPendingObservations'
@@ -31,10 +29,8 @@ const cardClass = cn(
 
 export function TherapistNotificationsPage() {
   const { user } = useAuth()
-  const navigate = useNavigate()
   const [items, setItems] = useState<TherapistPendingDisplayRow[]>([])
   const [loading, setLoading] = useState(true)
-  const [claimingId, setClaimingId] = useState<string | null>(null)
   const headerStagger = usePageStaggerVisible(true)
   const bodyStagger = usePageStaggerVisible(!loading, items.length)
 
@@ -66,33 +62,12 @@ export function TherapistNotificationsPage() {
     return () => document.removeEventListener('visibilitychange', onVis)
   }, [load])
 
-  const onClaim = async (clientId: string) => {
-    setClaimingId(clientId)
-    try {
-      const { error } = await claimUnlinkedSelfLead(clientId)
-      if (error) {
-        const msg = error.message?.toLowerCase() ?? ''
-        if (msg.includes('already_link') || msg.includes('unique')) {
-          toast.error('Another therapist already added this client.')
-        } else {
-          toast.error(error.message)
-        }
-        return
-      }
-      toast.success('Client added to your list.')
-      void load({ silent: true })
-      navigate(`/app/therapist/clients/${clientId}`, { replace: false })
-    } finally {
-      setClaimingId(null)
-    }
-  }
-
   return (
     <div className="space-y-6">
       <div style={pageStaggerItemStyle(0, headerStagger)}>
         <h1 className="text-3xl font-bold text-foreground">Notifications</h1>
         <p className="mt-2 text-lg text-muted-foreground">
-         Updates when supervised assessments are completed by a client or new self-assessment leads are available.
+          Updates when supervised assessments need observations or self-assessment clients need follow-up.
         </p>
       </div>
 
@@ -138,59 +113,36 @@ export function TherapistNotificationsPage() {
                 <div
                   className={cn(
                     cardClass,
-                    'p-0 overflow-hidden hover:border-white/12 hover:bg-white/[0.05]'
+                    'relative overflow-hidden p-0 hover:border-white/12 hover:bg-white/[0.05]'
                   )}
                 >
-                  {item.reportId ? (
-                    <Link
-                      to={`/app/therapist/clients/${item.clientId}/reports/${item.reportId}`}
-                      className={cn(
-                        'block p-5 pb-2 transition-colors',
-                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--zen-ring-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent'
-                      )}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-lg font-semibold tracking-tight text-foreground">
-                            {item.clientName}
-                          </p>
-                          <p className="mt-0.5 text-sm text-muted-foreground">
-                            Self assessment completed {formatDate(item.completedAt)} · not linked to a therapist yet
-                          </p>
-                          <p className="mt-2 text-xs text-sky-200/80">Open Zen Plan report</p>
-                        </div>
-                        <Badge
-                          variant="outline"
-                          className="shrink-0 border-amber-400/30 bg-amber-500/12 text-xs text-amber-100"
-                        >
-                          New lead
-                        </Badge>
+                  <Link
+                    to={`/app/therapist/clients/${item.clientId}`}
+                    className="absolute inset-0 rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--zen-ring-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent"
+                    aria-label={`Open ${item.clientName} client details`}
+                  />
+                  <div className="p-5 pb-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-lg font-semibold tracking-tight text-foreground">
+                          {item.clientName}
+                        </p>
+                        <p className="mt-0.5 text-sm text-muted-foreground">
+                          Self assessment completed {formatDate(item.completedAt)} · waiting for plan/status
+                        </p>
+                        <p className="mt-2 text-xs text-sky-200/80">Open client details</p>
                       </div>
-                    </Link>
-                  ) : (
-                    <div className="p-5 pb-2">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-lg font-semibold tracking-tight text-foreground">
-                            {item.clientName}
-                          </p>
-                          <p className="mt-0.5 text-sm text-muted-foreground">
-                            Self assessment completed {formatDate(item.completedAt)} · not linked to a therapist yet
-                          </p>
-                          <p className="mt-2 text-xs text-muted-foreground">Report is not ready yet.</p>
-                        </div>
-                        <Badge
-                          variant="outline"
-                          className="shrink-0 border-amber-400/30 bg-amber-500/12 text-xs text-amber-100"
-                        >
-                          New lead
-                        </Badge>
-                      </div>
+                      <Badge
+                        variant="outline"
+                        className="shrink-0 border-amber-400/30 bg-amber-500/12 text-xs text-amber-100"
+                      >
+                        Follow up
+                      </Badge>
                     </div>
-                  )}
-                  <div className="flex flex-wrap items-center gap-2 border-t border-white/10 bg-white/[0.02] px-5 py-3">
+                  </div>
+                  <div className="pointer-events-none relative z-10 flex flex-wrap items-center gap-2 border-t border-white/10 bg-white/[0.02] px-5 py-3">
                     {item.email ? (
-                      <Button variant="zenOutline" size="sm" className="gap-1.5" asChild>
+                      <Button variant="zenOutline" size="sm" className="pointer-events-auto gap-1.5" asChild>
                         <a href={`mailto:${item.email}`}>
                           <Mail className="size-3.5" aria-hidden />
                           Email
@@ -198,7 +150,7 @@ export function TherapistNotificationsPage() {
                       </Button>
                     ) : null}
                     {item.phone ? (
-                      <Button variant="zenOutline" size="sm" className="gap-1.5" asChild>
+                      <Button variant="zenOutline" size="sm" className="pointer-events-auto gap-1.5" asChild>
                         <a href={`tel:${item.phone}`}>
                           <Phone className="size-3.5" aria-hidden />
                           Call
@@ -208,19 +160,8 @@ export function TherapistNotificationsPage() {
                     {!item.email && !item.phone ? (
                       <p className="text-xs text-muted-foreground">No email or phone on file.</p>
                     ) : null}
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="gap-1.5"
-                      disabled={claimingId === item.clientId}
-                      onClick={() => void onClaim(item.clientId)}
-                    >
-                      {claimingId === item.clientId ? (
-                        <Loader2 className="size-3.5 animate-spin" aria-hidden />
-                      ) : (
-                        <UserPlus className="size-3.5" aria-hidden />
-                      )}
-                      Add as my client
+                    <Button type="button" size="sm" className="pointer-events-auto gap-1.5" asChild>
+                      <Link to={`/app/therapist/clients/${item.clientId}`}>Review & mark status</Link>
                     </Button>
                   </div>
                 </div>

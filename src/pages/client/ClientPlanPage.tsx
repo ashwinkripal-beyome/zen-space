@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { CalendarDays, ChevronDown, ClipboardPenLine, Download, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { PlanChecklist } from '@/components/PlanChecklist'
 import { PlanTimeline } from '@/components/PlanTimeline'
 import { PracticeDisclaimerDialog } from '@/components/PracticeDisclaimerDialog'
@@ -13,7 +14,7 @@ import { useClientOnboarding } from '@/hooks/useClientOnboarding.tsx'
 import { pageStaggerItemStyle, usePageStaggerVisible } from '@/hooks/usePageStaggerVisible'
 import { supabase } from '@/lib/supabase'
 import { isEveryPlanWeekMarkedComplete } from '@/lib/supervisedAssessmentEligibility'
-import { printZenPlanPdf } from '@/lib/zenPrintDocument'
+import { downloadZenPlanPdf } from '@/lib/zenPrintDocument'
 import { zenPrintPdfMetadata } from '@/lib/zenPrintPayloadHelpers'
 import { cn } from '@/lib/utils'
 
@@ -23,7 +24,7 @@ function formatReassessDate(d: Date): string {
 
 export function ClientPlanPage() {
   const { user, profile } = useAuth()
-  const { hasTherapists, therapistResolutionPending } = useClientOnboarding()
+  useClientOnboarding() // keep provider subscription
   const availability = useAssessmentAvailability()
   const [loading, setLoading] = useState(true)
   const [latestReport, setLatestReport] = useState<{
@@ -47,6 +48,7 @@ export function ClientPlanPage() {
   const [ritualDisclaimerAcked, setRitualDisclaimerAcked] = useState(false)
   const [ritualDisclaimerOpen, setRitualDisclaimerOpen] = useState(false)
   const [planProgressCompleted, setPlanProgressCompleted] = useState<number[]>([])
+  const [pdfLoading, setPdfLoading] = useState(false)
   const staggerVisible = usePageStaggerVisible(!loading, hasPlanOrRitual ? 'plan-ritual' : 'empty')
 
   const allPlanWeeksMarkedComplete = Boolean(
@@ -128,20 +130,11 @@ export function ClientPlanPage() {
       })
     }
     setLoading(false)
-  }, [user?.id, hasTherapists])
+  }, [user?.id])
 
   useEffect(() => {
     void load()
   }, [load])
-
-  if (therapistResolutionPending) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-4 py-20 text-muted-foreground">
-        <Loader2 className="size-10 animate-spin text-sky-300" aria-hidden />
-        <p>Loading…</p>
-      </div>
-    )
-  }
 
   if (loading) {
     return (
@@ -152,8 +145,8 @@ export function ClientPlanPage() {
     )
   }
 
-  const handleDownloadPdf = () => {
-    if (!latestReport) return
+  const handleDownloadPdf = async () => {
+    if (!latestReport || pdfLoading) return
     const reportHtml = latestReport.report_section || latestReport.content || ''
     const ritualHtml = ritualContent || ''
     const finalHtml = latestReport.final_narrative_section || ''
@@ -171,13 +164,18 @@ export function ClientPlanPage() {
         : null,
       latestReport.assessment
     )
-    printZenPlanPdf({
+    setPdfLoading(true)
+    const result = await downloadZenPlanPdf({
       reportHtml,
       finalNarrativeHtml: finalHtml || undefined,
       ritualHtml: ritualHtml || undefined,
       planHtml: planHtml || undefined,
       ...meta,
     })
+    setPdfLoading(false)
+    if (!result.ok) {
+      toast.error('Could not generate PDF. ' + (result.error ?? ''))
+    }
   }
 
   const canPrintPdf =
@@ -231,10 +229,10 @@ export function ClientPlanPage() {
       <br />
       Reach out to us at{' '}
       <a
-        href="tel:+918888888888"
+        href="tel:+917259294992"
         className="font-medium text-foreground underline decoration-sky-400/50 underline-offset-2"
       >
-        +91 8888888888
+        +91 7259294992
       </a>
       , or visit your nearest Zen Garden with your self-assessment report to unlock your personalised 18-week plan and
       fourfold Zen ritual.
@@ -266,11 +264,15 @@ export function ClientPlanPage() {
             type="button"
             variant="zenOutline"
             size="sm"
-            onClick={handleDownloadPdf}
-            disabled={!canPrintPdf}
+            onClick={() => void handleDownloadPdf()}
+            disabled={!canPrintPdf || pdfLoading}
           >
-            <Download className="mr-1.5 size-4" aria-hidden />
-            Download PDF
+            {pdfLoading ? (
+              <Loader2 className="mr-1.5 size-4 animate-spin" aria-hidden />
+            ) : (
+              <Download className="mr-1.5 size-4" aria-hidden />
+            )}
+            {pdfLoading ? 'Generating…' : 'Download PDF'}
           </Button>
         ) : null}
       </div>
@@ -342,7 +344,7 @@ export function ClientPlanPage() {
             </CardContent>
           </Card>
 
-          {planContent && hasTherapists === true && allPlanWeeksMarkedComplete ? (
+          {planContent && allPlanWeeksMarkedComplete ? (
             <Card
               className="zen-glass-card zen-ring-secondary ring-0 shadow-none print:hidden"
               style={pageStaggerItemStyle(2, staggerVisible)}
@@ -411,10 +413,9 @@ export function ClientPlanPage() {
           <CardContent className="space-y-4 text-muted-foreground">
             <p className="text-pretty leading-relaxed">
               Ready to begin your wellness journey?<br /><br />Reach out to us at{' '}
-              <a href="tel:+918888888888" className="font-medium text-foreground underline decoration-sky-400/50 underline-offset-2">
-                +91 8888888888
-              </a>, or visit your nearest Zen Garden with your self-assessment report to unlock your personalised 18-week plan and fourfold Zen ritual.<br /><br />We'd love to hear from you soon.
-            
+              <a href="tel:+917259294992" className="font-medium text-foreground underline decoration-sky-400/50 underline-offset-2">
+                +91 7259294992
+              </a>, or visit your nearest Zen Garden with your self-assessment report to unlock your personalised 18-week plan and fourfold Zen ritual.<br /><br />We&apos;d love to hear from you soon.
             </p>
           </CardContent>
         </Card>

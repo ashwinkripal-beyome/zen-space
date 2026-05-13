@@ -1,19 +1,13 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { Bell, Copy, Loader2, Mail, Phone, UserPlus, Users } from 'lucide-react'
-import { toast } from 'sonner'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { Bell, ChevronLeft, ChevronRight, ClipboardList, Mail, Phone, Users } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  useTherapistOtpSessionDialog,
-  type ActiveOtpSession,
-} from '@/components/therapist/TherapistOtpSessionDialog'
 import { useAuth } from '@/hooks/useAuth'
 import { useTherapistPendingRealtime } from '@/hooks/useTherapistPendingRealtime'
 import { pageStaggerItemStyle, usePageStaggerVisible } from '@/hooks/usePageStaggerVisible'
 import {
-  claimUnlinkedSelfLead,
   fetchTherapistPendingDisplayRows,
   type TherapistPendingDisplayRow,
 } from '@/lib/therapistPendingObservations'
@@ -21,6 +15,8 @@ import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
 
 type PendingNotificationRow = TherapistPendingDisplayRow
+
+type ReportStats = { self_count: number; supervised_count: number }
 
 function formatCompletedDate(iso: string): string {
   try {
@@ -30,27 +26,42 @@ function formatCompletedDate(iso: string): string {
   }
 }
 
-function formatCountdown(seconds: number): string {
-  const m = Math.floor(seconds / 60)
-  const s = seconds % 60
-  return `${m}:${s.toString().padStart(2, '0')}`
+function monthLabel(year: number, month: number): string {
+  return new Date(year, month - 1, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+}
+
+/** Returns { year, month } for today's UTC month */
+function todayYearMonth(): { year: number; month: number } {
+  const d = new Date()
+  return { year: d.getFullYear(), month: d.getMonth() + 1 }
+}
+
+/** Returns ISO date string "YYYY-MM-01" for the first day of given year/month */
+function monthToIsoDate(year: number, month: number): string {
+  return `${year}-${String(month).padStart(2, '0')}-01`
+}
+
+function shiftMonth(year: number, month: number, delta: number): { year: number; month: number } {
+  const d = new Date(year, month - 1 + delta, 1)
+  return { year: d.getFullYear(), month: d.getMonth() + 1 }
 }
 
 const glassCard = cn('zen-glass-card ring-0 shadow-none', 'zen-ring-secondary')
-const glassCardPremium = cn(
-  'zen-glass-card ring-0',
-  'shadow-[0_0_0_1px_var(--zen-ring-primary),0_8px_32px_rgba(0,0,0,0.12)]'
-)
 
 export function TherapistHomePage() {
   const { user } = useAuth()
-  const navigate = useNavigate()
-  const [now, setNow] = useState(() => Date.now())
-  const [activeOtpSessions, setActiveOtpSessions] = useState<ActiveOtpSession[]>([])
   const [linkedClientCount, setLinkedClientCount] = useState(0)
   const [pendingItems, setPendingItems] = useState<PendingNotificationRow[]>([])
   const [pendingLoading, setPendingLoading] = useState(true)
-  const [claimingId, setClaimingId] = useState<string | null>(null)
+
+  const [selectedMonth, setSelectedMonth] = useState<{ year: number; month: number }>(todayYearMonth)
+  const [reportStats, setReportStats] = useState<ReportStats | null>(null)
+  const [statsLoading, setStatsLoading] = useState(false)
+
+  const isCurrentMonth = useMemo(() => {
+    const today = todayYearMonth()
+    return selectedMonth.year === today.year && selectedMonth.month === today.month
+  }, [selectedMonth])
 
   const loadPendingNotifications = useCallback(async (opts?: { silent?: boolean }) => {
     const silent = opts?.silent ?? false
@@ -68,83 +79,44 @@ export function TherapistHomePage() {
     }
   }, [user?.id])
 
-  const fetchData = useCallback(async () => {
+  const fetchLinkedClientCount = useCallback(async () => {
     if (!user?.id) return
+    const { count } = await supabase
+      .from('therapist_clients')
+      .select('id', { count: 'exact', head: true })
+      .eq('therapist_id', user.id)
+    if (count != null) setLinkedClientCount(count)
+  }, [user?.id])
+
+  const fetchReportStats = useCallback(async (year: number, month: number) => {
+    if (!user?.id) return
+    setStatsLoading(true)
     try {
-      const [sessionsRes, countRes] = await Promise.all([
-        supabase
-          .from('therapist_otp_sessions')
-          .select(
-            'id, session_name, otp, max_clients, clients_used, expires_at, created_at, link_kind, company_id, companies ( name )'
-          )
-          .eq('therapist_id', user.id)
-          .gt('expires_at', new Date().toISOString())
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('therapist_clients')
-          .select('id', { count: 'exact', head: true })
-          .eq('therapist_id', user.id),
-      ])
-
-      if (sessionsRes.error) {
-        console.error('[therapist_otp_sessions]', sessionsRes.error)
-      } else if (sessionsRes.data?.length) {
-        setActiveOtpSessions(
-          sessionsRes.data.map(row => {
-            const companies = row as {
-              link_kind?: string
-              companies?: { name: string } | { name: string }[] | null
-            }
-            const emb = companies.companies
-            const companyName =
-              emb == null
-                ? null
-                : Array.isArray(emb)
-                  ? emb[0]?.name
-                  : typeof emb === 'object' && 'name' in emb
-                    ? (emb as { name: string }).name
-                    : null
-            return {
-              localId: String(row.id),
-              serverId: String(row.id),
-              name: String(row.session_name),
-              otp: String(row.otp),
-              expiresAt: new Date(String(row.expires_at)).getTime(),
-              clientsUsed: Number(row.clients_used),
-              maxClients: Number(row.max_clients),
-              linkKind: companies.link_kind === 'corporate' ? 'corporate' : 'individual',
-              companyName: companyName != null && String(companyName).trim() ? String(companyName) : null,
-            }
-          })
-        )
+      const { data, error } = await supabase.rpc('get_monthly_report_generation_stats', {
+        p_month: monthToIsoDate(year, month),
+      })
+      if (error) {
+        console.error('[report stats]', error)
+        setReportStats(null)
+        return
+      }
+      const row = Array.isArray(data) ? (data[0] as ReportStats | undefined) : (data as ReportStats | null)
+      if (row) {
+        setReportStats({
+          self_count: Number(row.self_count ?? 0),
+          supervised_count: Number(row.supervised_count ?? 0),
+        })
       } else {
-        setActiveOtpSessions([])
+        setReportStats({ self_count: 0, supervised_count: 0 })
       }
-
-      if (countRes.error) {
-        console.error('[therapist_clients count]', countRes.error)
-      } else if (countRes.count != null) {
-        setLinkedClientCount(countRes.count)
-      }
-    } catch (e) {
-      console.error('[therapist home fetch]', e)
+    } finally {
+      setStatsLoading(false)
     }
   }, [user?.id])
 
-  const {
-    therapistOtpSessionDialog,
-    generateOtpTriggerButton,
-    openExistingSessionInDialog,
-    copyCode,
-  } = useTherapistOtpSessionDialog({
-    activeOtpSessions,
-    onAfterCreate: fetchData,
-  })
-
   useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 1000)
-    return () => window.clearInterval(id)
-  }, [])
+    void fetchLinkedClientCount()
+  }, [fetchLinkedClientCount])
 
   useEffect(() => {
     if (!user?.id) return
@@ -152,34 +124,12 @@ export function TherapistHomePage() {
       .channel(`therapist_dash:${user.id}`)
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'therapist_clients',
-          filter: `therapist_id=eq.${user.id}`,
-        },
-        () => void fetchData()
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'therapist_otp_sessions',
-          filter: `therapist_id=eq.${user.id}`,
-        },
-        () => void fetchData()
+        { event: '*', schema: 'public', table: 'therapist_clients', filter: `therapist_id=eq.${user.id}` },
+        () => void fetchLinkedClientCount()
       )
       .subscribe()
-
-    return () => {
-      void supabase.removeChannel(channel)
-    }
-  }, [user?.id, fetchData])
-
-  useEffect(() => {
-    void fetchData()
-  }, [fetchData])
+    return () => { void supabase.removeChannel(channel) }
+  }, [user?.id, fetchLinkedClientCount])
 
   useEffect(() => {
     void loadPendingNotifications()
@@ -198,47 +148,17 @@ export function TherapistHomePage() {
     return () => document.removeEventListener('visibilitychange', onVisible)
   }, [user?.id, loadPendingNotifications])
 
-  // Realtime can be off or filtered in the project; poll + focus refetch keeps counts fresh.
   useEffect(() => {
     if (!user?.id) return
-    const intervalMs = 5000
-    const id = window.setInterval(() => void fetchData(), intervalMs)
+    const id = window.setInterval(() => void fetchLinkedClientCount(), 10000)
     return () => window.clearInterval(id)
-  }, [user?.id, fetchData])
+  }, [user?.id, fetchLinkedClientCount])
 
   useEffect(() => {
-    if (!user?.id) return
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') void fetchData()
-    }
-    document.addEventListener('visibilitychange', onVisible)
-    return () => document.removeEventListener('visibilitychange', onVisible)
-  }, [user?.id, fetchData])
-
-  const liveSessions = activeOtpSessions.filter(s => s.expiresAt > now)
+    void fetchReportStats(selectedMonth.year, selectedMonth.month)
+  }, [fetchReportStats, selectedMonth])
 
   const staggerVisible = usePageStaggerVisible(true)
-
-  const onClaimSelfLead = async (clientId: string) => {
-    setClaimingId(clientId)
-    try {
-      const { error } = await claimUnlinkedSelfLead(clientId)
-      if (error) {
-        const msg = error.message?.toLowerCase() ?? ''
-        if (msg.includes('already_link') || msg.includes('unique')) {
-          toast.error('Another therapist already added this client.')
-        } else {
-          toast.error(error.message)
-        }
-        return
-      }
-      toast.success('Client added to your list.')
-      void loadPendingNotifications({ silent: true })
-      navigate(`/app/therapist/clients/${clientId}`, { replace: false })
-    } finally {
-      setClaimingId(null)
-    }
-  }
 
   const sectionHeadingClass =
     'mb-4 text-sm font-semibold uppercase tracking-[0.2em] text-muted-foreground'
@@ -248,18 +168,84 @@ export function TherapistHomePage() {
       <div style={pageStaggerItemStyle(0, staggerVisible)}>
         <h1 className="text-4xl font-bold tracking-tight text-foreground">Dashboard</h1>
         <p className="mt-2 max-w-2xl text-lg text-muted-foreground">
-          Manage linked clients, follow up on assessments, and share OTP codes for supervised sessions.
+          Manage your clients, follow up on assessments, and track progress.
         </p>
       </div>
 
       <div>
-        <h2 className={sectionHeadingClass} style={pageStaggerItemStyle(1, staggerVisible)}>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3" style={pageStaggerItemStyle(1, staggerVisible)}>
+          <h2 className={cn(sectionHeadingClass, 'mb-0')}>Report generation stats</h2>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setSelectedMonth(m => shiftMonth(m.year, m.month, -1))}
+              className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
+              aria-label="Previous month"
+            >
+              <ChevronLeft className="size-4" aria-hidden />
+            </button>
+            <span className="min-w-[9rem] text-center text-sm font-medium text-foreground">
+              {monthLabel(selectedMonth.year, selectedMonth.month)}
+            </span>
+            <button
+              type="button"
+              onClick={() => setSelectedMonth(m => shiftMonth(m.year, m.month, 1))}
+              disabled={isCurrentMonth}
+              className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
+              aria-label="Next month"
+            >
+              <ChevronRight className="size-4" aria-hidden />
+            </button>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2" style={pageStaggerItemStyle(2, staggerVisible)}>
+          <Card className={glassCard}>
+            <CardHeader className="pb-2">
+              <CardDescription className="flex items-center gap-1.5 text-muted-foreground">
+                <ClipboardList className="size-3.5" aria-hidden />
+                Self assessments
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {statsLoading ? (
+                <p className="text-3xl font-bold tabular-nums text-foreground/40">—</p>
+              ) : (
+                <p className="text-3xl font-bold tabular-nums text-foreground">
+                  {reportStats?.self_count ?? 0}
+                </p>
+              )}
+              <p className="mt-0.5 text-xs text-muted-foreground">reports generated</p>
+            </CardContent>
+          </Card>
+          <Card className={glassCard}>
+            <CardHeader className="pb-2">
+              <CardDescription className="flex items-center gap-1.5 text-muted-foreground">
+                <ClipboardList className="size-3.5" aria-hidden />
+                Supervised assessments
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {statsLoading ? (
+                <p className="text-3xl font-bold tabular-nums text-foreground/40">—</p>
+              ) : (
+                <p className="text-3xl font-bold tabular-nums text-foreground">
+                  {reportStats?.supervised_count ?? 0}
+                </p>
+              )}
+              <p className="mt-0.5 text-xs text-muted-foreground">reports generated</p>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      <div>
+        <h2 className={sectionHeadingClass} style={pageStaggerItemStyle(3, staggerVisible)}>
           Linked clients
         </h2>
-        <Card className={glassCard} style={pageStaggerItemStyle(2, staggerVisible)}>
+        <Card className={glassCard} style={pageStaggerItemStyle(4, staggerVisible)}>
           <CardHeader>
             <CardTitle className="text-xl text-foreground">Linked clients</CardTitle>
-            <CardDescription className="text-muted-foreground">Connected via your assessment codes</CardDescription>
+            <CardDescription className="text-muted-foreground">All clients linked to you</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <p className="text-4xl font-bold tabular-nums text-foreground">{linkedClientCount}</p>
@@ -273,11 +259,11 @@ export function TherapistHomePage() {
         </Card>
       </div>
 
-      <Card className={glassCard} style={pageStaggerItemStyle(3, staggerVisible)}>
+      <Card className={glassCard} style={pageStaggerItemStyle(5, staggerVisible)}>
         <CardHeader className="pb-2">
           <CardTitle className="text-xl text-foreground">Notifications</CardTitle>
           <CardDescription className="text-muted-foreground">
-            Supervised work for linked clients, plus self-assessments from unlinked clients you can add as a client
+            Supervised work needing observations, plus self-assessment clients waiting for follow-up
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -332,26 +318,31 @@ export function TherapistHomePage() {
                   }
                   return (
                     <li key={`self-${item.assessmentId}`}>
-                      <div className={cn(homeCard, 'hover:border-white/12 hover:bg-white/[0.05]')}>
+                      <div className={cn(homeCard, 'relative hover:border-white/12 hover:bg-white/[0.05]')}>
+                        <Link
+                          to={`/app/therapist/clients/${item.clientId}`}
+                          className="absolute inset-0 rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--zen-ring-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent"
+                          aria-label={`Open ${item.clientName} client details`}
+                        />
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-lg font-semibold tracking-tight text-foreground">
                               {item.clientName}
                             </p>
                             <p className="mt-0.5 text-sm text-muted-foreground">
-                              Self assessment · {formatCompletedDate(item.completedAt)}
+                              Self assessment · waiting for plan/status · {formatCompletedDate(item.completedAt)}
                             </p>
                           </div>
                           <Badge
                             variant="outline"
                             className="shrink-0 border-amber-400/30 bg-amber-500/12 text-xs text-amber-100"
                           >
-                            New lead
+                            Follow up
                           </Badge>
                         </div>
-                        <div className="flex flex-wrap gap-2 pt-0.5">
+                        <div className="pointer-events-none relative z-10 flex flex-wrap gap-2 pt-0.5">
                           {item.email ? (
-                            <Button variant="zenOutline" size="sm" className="h-8 gap-1" asChild>
+                            <Button variant="zenOutline" size="sm" className="pointer-events-auto h-8 gap-1" asChild>
                               <a href={`mailto:${item.email}`} onClick={e => e.stopPropagation()}>
                                 <Mail className="size-3.5" aria-hidden />
                                 Email
@@ -359,26 +350,15 @@ export function TherapistHomePage() {
                             </Button>
                           ) : null}
                           {item.phone ? (
-                            <Button variant="zenOutline" size="sm" className="h-8 gap-1" asChild>
+                            <Button variant="zenOutline" size="sm" className="pointer-events-auto h-8 gap-1" asChild>
                               <a href={`tel:${item.phone}`} onClick={e => e.stopPropagation()}>
                                 <Phone className="size-3.5" aria-hidden />
                                 Call
                               </a>
                             </Button>
                           ) : null}
-                          <Button
-                            type="button"
-                            size="sm"
-                            className="h-8 gap-1"
-                            disabled={claimingId === item.clientId}
-                            onClick={() => void onClaimSelfLead(item.clientId)}
-                          >
-                            {claimingId === item.clientId ? (
-                              <Loader2 className="size-3.5 animate-spin" aria-hidden />
-                            ) : (
-                              <UserPlus className="size-3.5" aria-hidden />
-                            )}
-                            Add client
+                          <Button type="button" size="sm" className="pointer-events-auto h-8 gap-1" asChild>
+                            <Link to={`/app/therapist/clients/${item.clientId}`}>Review status</Link>
                           </Button>
                         </div>
                       </div>
@@ -395,96 +375,6 @@ export function TherapistHomePage() {
           )}
         </CardContent>
       </Card>
-
-      <Card className={glassCard} style={pageStaggerItemStyle(4, staggerVisible)}>
-        <CardHeader className="space-y-4 pb-2">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0 space-y-1">
-              <CardTitle className="text-xl text-foreground">Active codes</CardTitle>
-              <CardDescription className="text-muted-foreground">
-                {liveSessions.length} active {liveSessions.length === 1 ? 'code' : 'codes'} · share with clients before
-                they expire
-              </CardDescription>
-            </div>
-            {generateOtpTriggerButton}
-          </div>
-        </CardHeader>
-        <CardContent>
-          {liveSessions.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-white/20 bg-white/[0.02] py-14 text-center">
-              <p className="text-muted-foreground">
-                No active assessment code. Use <span className="font-medium text-foreground/90">Generate OTP</span> above
-                to create one to share.
-              </p>
-            </div>
-          ) : (
-            <div className="grid gap-5 md:grid-cols-2">
-              {liveSessions.map((session, sessionIndex) => {
-              const left = Math.max(0, Math.ceil((session.expiresAt - now) / 1000))
-              return (
-                <Card
-                  key={session.localId}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`View QR and full code for ${session.name}`}
-                  className={cn(
-                    glassCardPremium,
-                    'cursor-pointer transition-colors outline-none hover:bg-white/[0.04] focus-visible:ring-2 focus-visible:ring-[var(--zen-ring-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent'
-                  )}
-                  style={pageStaggerItemStyle(5 + sessionIndex, staggerVisible)}
-                  onClick={() => openExistingSessionInDialog(session)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault()
-                      openExistingSessionInDialog(session)
-                    }
-                  }}
-                >
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-lg font-semibold text-foreground">{session.name}</CardTitle>
-                    <CardDescription className="text-muted-foreground">
-                      <Badge variant="outline" className="border-white/25 bg-white/5 text-foreground/90">
-                        {session.clientsUsed}/{session.maxClients} joined
-                      </Badge>
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="rounded-2xl border border-white/15 bg-gradient-to-br from-violet-600/35 to-cyan-600/20 px-4 py-6 text-center">
-                      <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">Code</p>
-                      <p className="font-mono text-4xl font-bold tracking-[0.2em] text-foreground sm:text-5xl">
-                        {session.otp}
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <Badge
-                        variant="outline"
-                        className="border-sky-400/35 bg-sky-500/12 text-sky-100 tabular-nums"
-                      >
-                        Expires in {formatCountdown(left)}
-                      </Badge>
-                      <Button
-                        type="button"
-                        variant="zenOutline"
-                        size="sm"
-                        onClick={e => {
-                          e.stopPropagation()
-                          void copyCode(session.otp)
-                        }}
-                      >
-                        <Copy className="size-4" aria-hidden />
-                        Copy
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              )
-            })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {therapistOtpSessionDialog}
     </div>
   )
 }

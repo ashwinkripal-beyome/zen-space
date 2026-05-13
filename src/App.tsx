@@ -11,9 +11,7 @@ import {
 import { useAuth } from './hooks/useAuth'
 import { Button } from '@/components/ui/button'
 import { Toaster } from '@/components/ui/sonner'
-import { ClientOnboardingGate } from '@/components/ClientOnboardingGate'
 import { ClientOnboardingProvider } from '@/hooks/useClientOnboarding.tsx'
-import { isClientProfileComplete } from '@/lib/clientProfileComplete'
 import { AuthLayout } from '@/layouts/AuthLayout'
 import { ClientLayout } from '@/layouts/ClientLayout'
 import { TherapistLayout } from '@/layouts/TherapistLayout'
@@ -25,7 +23,6 @@ import { ForgotPasswordPage } from '@/pages/auth/ForgotPasswordPage'
 import { ResetPasswordPage } from '@/pages/auth/ResetPasswordPage'
 import { ClientDashboard } from '@/pages/client/ClientDashboard'
 import { ClientProfilePage } from '@/pages/client/ClientProfilePage'
-import { ClientOtpScreen } from '@/pages/ClientOtpScreen'
 import { ClientAssessmentPage } from '@/pages/client/ClientAssessmentPage'
 import { ClientAssessmentSessionPage } from '@/pages/client/ClientAssessmentSessionPage'
 import { ClientAssessmentReviewPage } from '@/pages/client/ClientAssessmentReviewPage'
@@ -33,7 +30,6 @@ import { ClientReportPage } from '@/pages/client/ClientReportPage'
 import { ClientReportDetailPage } from '@/pages/client/ClientReportDetailPage'
 import { ClientPlanPage } from '@/pages/client/ClientPlanPage'
 import { ClientSubscriptionLockedPage } from '@/pages/client/ClientSubscriptionLockedPage'
-import { ClientTherapistsPage } from '@/pages/client/ClientTherapistsPage'
 import { TherapistHomePage } from '@/pages/therapist/TherapistHomePage'
 import { TherapistClientsPage } from '@/pages/therapist/TherapistClientsPage'
 import { TherapistClientDetailPage } from '@/pages/therapist/TherapistClientDetailPage'
@@ -42,6 +38,7 @@ import { TherapistClientReportDetailPage } from '@/pages/therapist/TherapistClie
 import { TherapistClientObservationsPage } from '@/pages/therapist/TherapistClientObservationsPage'
 import { TherapistClientPlanPage } from '@/pages/therapist/TherapistClientPlanPage'
 import { TherapistNotificationsPage } from '@/pages/therapist/TherapistNotificationsPage'
+import { TherapistManageCompaniesPage } from '@/pages/therapist/TherapistManageCompaniesPage'
 import { TherapistProfilePage } from '@/pages/therapist/TherapistProfilePage'
 import { AdminSectionPage } from '@/pages/admin/AdminSectionPage'
 import { AdminAccountPage } from '@/pages/admin/AdminAccountPage'
@@ -60,8 +57,6 @@ function appPathForRole(role: 'admin' | 'therapist' | 'client'): string {
 
 function ClientPostLoginRedirect() {
   const { user, profile, profileLoading } = useAuth()
-  const profileComplete =
-    profile?.role === 'client' ? isClientProfileComplete(profile) : true
 
   if (!user) {
     return <Navigate to="/login" replace />
@@ -77,8 +72,8 @@ function ClientPostLoginRedirect() {
     return <Navigate to="/complete-profile" replace />
   }
 
-  if (!profileComplete) {
-    return <Navigate to="/app/client/profile" replace />
+  if (profile.client_initial_login_redirect_done === false) {
+    return <Navigate to="/app/client/assessment" replace />
   }
   return <Navigate to="/app/client" replace />
 }
@@ -136,15 +131,11 @@ function CompleteProfileScreen() {
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-8 text-center text-foreground">
         <h1 className="text-2xl font-semibold">We couldn&apos;t load your account</h1>
         <p className="max-w-md text-muted-foreground">
-          Your sign-in worked, but your profile row isn&apos;t available yet. Try again, open profile setup, or sign
-          out.
+          Your sign-in worked, but your profile row isn&apos;t available yet. Try again or sign out.
         </p>
         <div className="flex flex-col gap-2 sm:flex-row sm:gap-3">
           <Button type="button" variant="zenOutline" onClick={() => refetchProfile()}>
             Retry
-          </Button>
-          <Button asChild variant="zen">
-            <Link to="/app/client/profile">Profile setup</Link>
           </Button>
           <Button type="button" variant="zenOutline" onClick={() => void signOut()}>
             Sign out
@@ -205,19 +196,15 @@ function App() {
         >
           <Route index element={<ClientDashboard />} />
           <Route path="profile" element={<ClientProfilePage />} />
-          <Route path="otp" element={<ClientOtpScreen />} />
-          <Route path="therapists" element={<ClientTherapistsPage />} />
           <Route path="assessment" element={<ClientAssessmentPage />} />
           <Route path="assessment/self/session" element={<ClientAssessmentSessionPage />} />
           <Route path="assessment/self/review" element={<ClientAssessmentReviewPage />} />
+          <Route path="assessment/supervised/session" element={<ClientAssessmentSessionPage />} />
+          <Route path="assessment/supervised/review" element={<ClientAssessmentReviewPage />} />
           <Route path="report" element={<ClientReportPage />} />
           <Route path="report/:reportId" element={<ClientReportDetailPage />} />
           <Route path="plan" element={<ClientPlanPage />} />
           <Route path="subscription-locked" element={<ClientSubscriptionLockedPage />} />
-          <Route element={<ClientOnboardingGate />}>
-            <Route path="assessment/supervised/session" element={<ClientAssessmentSessionPage />} />
-            <Route path="assessment/supervised/review" element={<ClientAssessmentReviewPage />} />
-          </Route>
         </Route>
 
         <Route
@@ -236,8 +223,8 @@ function App() {
           <Route path="clients/:clientId/reports/:reportId" element={<TherapistClientReportDetailPage />} />
           <Route path="clients/:clientId/observations" element={<TherapistClientObservationsPage />} />
           <Route path="clients/:clientId/plan" element={<TherapistClientPlanPage />} />
-          <Route path="clients/:clientId/otp" element={<Navigate to="/app/therapist" replace />} />
           <Route path="notifications" element={<TherapistNotificationsPage />} />
+          <Route path="manage-companies" element={<TherapistManageCompaniesPage />} />
           <Route path="profile" element={<TherapistProfilePage />} />
         </Route>
 

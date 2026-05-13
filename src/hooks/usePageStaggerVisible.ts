@@ -2,15 +2,14 @@ import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 
 const STAGGER_STEP_MS = 120
-const STAGGER_TRANSITION = 'opacity 600ms ease, transform 600ms ease'
 
 /** Fade + slide-up per block, staggered like the client dashboard tiles. */
 export function pageStaggerItemStyle(index: number, visible: boolean): CSSProperties {
+  const delay = visible ? `${index * STAGGER_STEP_MS}ms` : '0ms'
   return {
-    transitionDelay: visible ? `${index * STAGGER_STEP_MS}ms` : '0ms',
     opacity: visible ? 1 : 0,
     transform: visible ? 'translateY(0)' : 'translateY(16px)',
-    transition: STAGGER_TRANSITION,
+    transition: `opacity 600ms ease ${delay}, transform 600ms ease ${delay}`,
   }
 }
 

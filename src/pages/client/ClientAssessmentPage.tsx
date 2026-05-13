@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { Calendar, ClipboardCheck, Lock, ShieldCheck } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
@@ -7,6 +8,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { useAssessmentAvailability } from '@/hooks/useAssessmentAvailability'
 import { pageStaggerItemStyle, usePageStaggerVisible } from '@/hooks/usePageStaggerVisible'
 import { useClientOnboarding } from '@/hooks/useClientOnboarding.tsx'
+import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
 
 function displayFirstName(profile: { first_name?: string; name?: string } | null): string {
@@ -35,21 +37,33 @@ type AssessmentTile = {
 }
 
 export function ClientAssessmentPage() {
-  const { profile } = useAuth()
-  const { hasTherapists, therapistResolutionPending } = useClientOnboarding()
+  const { profile, user, refetchProfile } = useAuth()
+  useClientOnboarding() // keep provider subscription; values unused after OTP removal
   const availability = useAssessmentAvailability()
   const name = displayFirstName(profile ?? null)
+  const flagFlipped = useRef(false)
 
-  const therapistLinked = hasTherapists === true
+  useEffect(() => {
+    if (flagFlipped.current) return
+    if (!user?.id || !profile || profile.role !== 'client') return
+    if (profile.client_initial_login_redirect_done !== false) return
+    flagFlipped.current = true
+    void supabase
+      .from('profiles')
+      .update({ client_initial_login_redirect_done: true })
+      .eq('id', user.id)
+      .then(({ error }) => {
+        if (!error) refetchProfile()
+      })
+  }, [user?.id, profile, refetchProfile])
+
   const paidForSupervised = availability.isPaidForSupervised
   const staggerVisible = usePageStaggerVisible(true)
-  const showTherapistBanner = !therapistLinked && !therapistResolutionPending
-  const tileStaggerBase = showTherapistBanner ? 2 : 1
+  const tileStaggerBase = 1
 
   const selfStatus = (): Pick<AssessmentTile, 'status' | 'statusLabel' | 'to'> => {
-    if (therapistResolutionPending) return { status: 'locked', statusLabel: 'Loading…' }
     if (availability.loading) return { status: 'locked', statusLabel: 'Loading…' }
-    if (therapistLinked && paidForSupervised) {
+    if (paidForSupervised) {
       return {
         status: 'locked',
         statusLabel: 'Use supervised assessment',
@@ -72,10 +86,9 @@ export function ClientAssessmentPage() {
   }
 
   const supervisedStatus = (): Pick<AssessmentTile, 'status' | 'statusLabel' | 'to'> => {
-    if (!therapistLinked) return { status: 'locked', statusLabel: 'Link therapist first' }
     if (availability.loading) return { status: 'locked', statusLabel: 'Loading…' }
-    if (therapistLinked && !paidForSupervised) {
-      return { status: 'locked', statusLabel: 'Your therapist will enable this for paid customers' }
+    if (!paidForSupervised) {
+      return { status: 'locked', statusLabel: 'Pro' }
     }
     if (!availability.supervised.available) {
       const br = availability.supervised.supervisedBlockedReason
@@ -107,7 +120,7 @@ export function ClientAssessmentPage() {
       id: 'supervised',
       title: 'Supervised Assessment',
       description:
-        'Complete the benchmark with your therapist involved. After you finish, your therapist will add professional observations and generate your personalized Zen Plan report.',
+        'Complete this assessment to receive detailed insights, a personalized 18-week plan, zen rituals, personalized mental reprogramming statements and expert recommendations.',
       duration: '~15 min',
       questions: BENCHMARK_TOTAL_QUESTIONS,
       icon: <ShieldCheck className="size-8 text-emerald-300" />,
@@ -117,9 +130,7 @@ export function ClientAssessmentPage() {
       id: 'self',
       title: 'Self Assessment',
       description:
-        therapistLinked
-          ? 'One-time self benchmark while you are linked and not yet on a paid program. After your therapist marks you as a paid customer, use the supervised assessment instead.'
-          : 'Trial assessment before you link with a therapist: full benchmark on your own, your observations, and an instant Zen Plan report. When you are linked and on a paid program, use the supervised assessment instead.',
+        'Complete this one-time self assessment to receive detailed insights and personalized mental reprogramming statements. A zen expert will get in touch with you for your personalized 18-week plan.',
       duration: '~15 min',
       questions: BENCHMARK_TOTAL_QUESTIONS,
       icon: <ClipboardCheck className="size-8 text-sky-300" />,
@@ -135,19 +146,6 @@ export function ClientAssessmentPage() {
           Hi {name}, choose an assessment to begin your journey.
         </p>
       </div>
-
-      {showTherapistBanner && (
-        <div
-          className="rounded-2xl border border-sky-400/25 bg-sky-500/10 px-4 py-3 text-sm text-sky-100/90"
-          style={pageStaggerItemStyle(1, staggerVisible)}
-        >
-          Some assessments require a linked therapist.{' '}
-          <Link to="/app/client/otp" className="font-medium underline underline-offset-4 hover:text-foreground">
-            Link a therapist
-          </Link>{' '}
-          to unlock them.
-        </div>
-      )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {tiles.map((tile, tileIndex) => {

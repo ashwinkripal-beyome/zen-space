@@ -57,7 +57,7 @@ export function ReportGenerationWaitOverlay({
         <div className="space-y-3 text-foreground">
           <h2 className="text-xl font-semibold tracking-tight">Generating your Zen Plan report</h2>
           <p className="text-sm leading-relaxed text-muted-foreground">
-            This step can take <span className="font-medium text-foreground/90">up to 2 minutes</span>. Please stay on
+            This step can take <span className="font-medium text-foreground/90">3-4 minutes</span>. Please stay on
             this screen and wait for it to finish.
           </p>
           <p className="rounded-xl border border-amber-400/25 bg-amber-500/10 px-4 py-3 text-left text-sm leading-relaxed text-amber-100/95">

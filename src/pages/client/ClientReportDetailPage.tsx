@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ChevronLeft, Download, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { PracticeDisclaimerDialog } from '@/components/PracticeDisclaimerDialog'
 import { ReportBody } from '@/components/ReportBody'
 import { Button } from '@/components/ui/button'
@@ -8,7 +9,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { useAuth } from '@/hooks/useAuth'
 import { pageStaggerItemStyle, usePageStaggerVisible } from '@/hooks/usePageStaggerVisible'
 import { supabase } from '@/lib/supabase'
-import { printZenPlanPdf } from '@/lib/zenPrintDocument'
+import { downloadZenPlanPdf } from '@/lib/zenPrintDocument'
 import { zenPrintPdfMetadata } from '@/lib/zenPrintPayloadHelpers'
 import {
   reportDetailTabButtonClassName,
@@ -34,6 +35,7 @@ export function ClientReportDetailPage() {
   const [report, setReport] = useState<ReportData | null>(null)
   const [tab, setTab] = useState<Tab>('report')
   const [fourfoldDisclaimerOpen, setFourfoldDisclaimerOpen] = useState(false)
+  const [pdfLoading, setPdfLoading] = useState(false)
   const staggerVisible = usePageStaggerVisible(!loading, `${reportId}-${Boolean(report)}`)
 
   const load = useCallback(async () => {
@@ -93,8 +95,8 @@ export function ClientReportDetailPage() {
     void load()
   }, [load])
 
-  const handlePrintPdf = () => {
-    if (!report) return
+  const handlePrintPdf = async () => {
+    if (!report || pdfLoading) return
     const reportContent = report.reportSection || report.content || ''
     const ritualContent = report.ritualSection || ''
     const finalContent = report.finalNarrativeSection || ''
@@ -112,13 +114,18 @@ export function ClientReportDetailPage() {
         : null,
       report.assessment
     )
-    printZenPlanPdf({
+    setPdfLoading(true)
+    const result = await downloadZenPlanPdf({
       reportHtml: reportContent,
       finalNarrativeHtml: finalContent || undefined,
       ritualHtml: ritualContent || undefined,
       planHtml: planContent || undefined,
       ...meta,
     })
+    setPdfLoading(false)
+    if (!result.ok) {
+      toast.error('Could not generate PDF. ' + (result.error ?? ''))
+    }
   }
 
   if (loading) {
@@ -181,11 +188,15 @@ export function ClientReportDetailPage() {
           type="button"
           variant="zenOutline"
           size="sm"
-          onClick={handlePrintPdf}
-          disabled={!reportContent && !ritualContent && !finalContent && !planSection}
+          onClick={() => void handlePrintPdf()}
+          disabled={(!reportContent && !ritualContent && !finalContent && !planSection) || pdfLoading}
         >
-          <Download className="mr-1.5 size-4" aria-hidden />
-          Download PDF
+          {pdfLoading ? (
+            <Loader2 className="mr-1.5 size-4 animate-spin" aria-hidden />
+          ) : (
+            <Download className="mr-1.5 size-4" aria-hidden />
+          )}
+          {pdfLoading ? 'Generating…' : 'Download PDF'}
         </Button>
       </div>
 
@@ -237,10 +248,10 @@ export function ClientReportDetailPage() {
               <ReportBody content={ritualContent} />
             ) : (
               <p className="py-8 text-muted-foreground">
-              Ready to begin your wellness journey?<br /><br />Reach out to us at{' '}
-              <a href="tel:+918888888888" className="font-medium text-foreground underline decoration-sky-400/50 underline-offset-2">
-                +91 8888888888
-              </a>, or visit your nearest Zen Garden with your self-assessment report to unlock your personalised 18-week plan and fourfold Zen ritual.<br /><br />We'd love to hear from you soon.
+                Ready to begin your wellness journey?<br /><br />Reach out to us at{' '}
+                <a href="tel:+917259294992" className="font-medium text-foreground underline decoration-sky-400/50 underline-offset-2">
+                  +91 7259294992
+                </a>, or visit your nearest Zen Garden with your self-assessment report to unlock your personalised 18-week plan and fourfold Zen ritual.<br /><br />We&apos;d love to hear from you soon.
               </p>
             ))}
         </CardContent>

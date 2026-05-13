@@ -372,15 +372,15 @@ function buildFullHtmlDocument(payload: ZenPlanPrintPayload): string {
       border-radius: 0 0 8px 8px;
     }
     .zen-print-suggestions-c1 {
-      background: color-mix(in srgb, #374f97 12%, #fff);
+      background: #e7eaf3;
       border-color: rgba(55, 79, 151, 0.25);
     }
     .zen-print-suggestions-c2 {
-      background: color-mix(in srgb, #8b3a6a 10%, #fff);
+      background: #f3ebf0;
       border-color: rgba(139, 58, 106, 0.25);
     }
     .zen-print-suggestions-c3 {
-      background: color-mix(in srgb, #2d6b52 10%, #fff);
+      background: #eaf0ee;
       border-color: rgba(45, 107, 82, 0.25);
     }
     .zen-print-affirmations {
@@ -388,7 +388,7 @@ function buildFullHtmlDocument(payload: ZenPlanPrintPayload): string {
       padding: 0.6rem 0.75rem;
       border-radius: 8px;
       border: 1px solid rgba(81, 152, 202, 0.45);
-      background: color-mix(in srgb, var(--zen-c4-from) 8%, #fff);
+      background: #f1f7fb;
     }
     .zen-print-section-body .zen-print-panel {
       border-radius: 8px;
@@ -530,6 +530,173 @@ function buildFullHtmlDocument(payload: ZenPlanPrintPayload): string {
   </div>
 </body>
 </html>`
+}
+
+/**
+ * Builds a full printable HTML document string from the given payload.
+ * Exported so callers can reuse the document without triggering print.
+ */
+export { buildFullHtmlDocument }
+
+/**
+ * Generates a PDF by rendering the report HTML to a canvas via html2canvas,
+ * then packing the canvas slices into a jsPDF document and triggering a file
+ * download.  Works on Android / iOS browsers where window.print() does not
+ * offer a "Save as PDF" option.
+ *
+ * Returns { ok: true } on success or { ok: false, error } on failure.
+ */
+export async function downloadZenPlanPdf(
+  payload: ZenPlanPrintPayload
+): Promise<{ ok: boolean; error?: string }> {
+  // Render inside an isolated iframe so only the print document's own hex/rgb
+  // CSS applies — this avoids html2canvas choking on oklch() color functions
+  // used by the app's Tailwind/shadcn stylesheet.
+  const iframe = document.createElement('iframe')
+  iframe.setAttribute('aria-hidden', 'true')
+  // Visible but off-screen; html2canvas needs non-zero dimensions to render.
+  iframe.style.cssText =
+    'position:fixed;left:0;top:0;width:794px;height:1px;' +
+    'border:none;opacity:0;pointer-events:none;z-index:-9999'
+  document.body.appendChild(iframe)
+
+  try {
+    const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
+      import('jspdf'),
+      import('html2canvas'),
+    ])
+
+    const html = buildFullHtmlDocument(payload)
+
+    // Write the full self-contained HTML into the iframe
+    await new Promise<void>(resolve => {
+      const iDoc = iframe.contentDocument!
+      const onLoad = () => resolve()
+      // onload fires after doc.write on most browsers; guard with readyState too
+      iframe.addEventListener('load', onLoad, { once: true })
+      iDoc.open()
+      iDoc.write(html)
+      iDoc.close()
+      if (iDoc.readyState === 'complete') {
+        iframe.removeEventListener('load', onLoad)
+        resolve()
+      }
+    })
+
+    // Let the iframe layout settle, then expand its height to full scroll height
+    await new Promise<void>(r => setTimeout(r, 80))
+    const iDoc = iframe.contentDocument!
+    const scrollH =
+      iDoc.documentElement.scrollHeight || iDoc.body.scrollHeight || 4000
+    iframe.style.height = `${scrollH}px`
+    await new Promise<void>(r => setTimeout(r, 40))
+
+    const canvas = await html2canvas(iDoc.body, {
+      scale: 1.5,
+      useCORS: true,
+      backgroundColor: '#faf9f7',
+      logging: false,
+      width: 794,
+      windowWidth: 794,
+      scrollX: 0,
+      scrollY: 0,
+    })
+
+    // A4: 210 × 297 mm
+    const PDF_W_MM = 210
+    const PDF_H_MM = 297
+    const imgW = canvas.width
+    const imgH = canvas.height
+    const mmPerPx = PDF_W_MM / imgW
+    const pageHeightPx = Math.floor(PDF_H_MM / mmPerPx)
+
+    // Read pixel data once so we can search for safe break points (rows that
+    // are mostly background-coloured) and avoid cutting through lines of text.
+    const srcCtx = canvas.getContext('2d')
+    const srcData = srcCtx ? srcCtx.getImageData(0, 0, imgW, imgH).data : null
+
+    const isWhitespaceRow = (y: number): boolean => {
+      if (!srcData) return true
+      const xStride = 2
+      let bg = 0
+      let total = 0
+      const rowStart = y * imgW * 4
+      for (let x = 0; x < imgW; x += xStride) {
+        const i = rowStart + x * 4
+        const r = srcData[i]
+        const g = srcData[i + 1]
+        const b = srcData[i + 2]
+        total++
+        // background paper is #faf9f7; text glyphs are far darker
+        if (r >= 240 && g >= 240 && b >= 235) bg++
+      }
+      return total > 0 && bg / total >= 0.98
+    }
+
+    /** Find a clean horizontal cut near `targetY`, preferring rows of whitespace. */
+    const findSafeCut = (yStart: number, targetY: number): number => {
+      const minPageH = Math.floor(pageHeightPx * 0.6)
+      const lowerBound = Math.max(yStart + minPageH, targetY - 220)
+      for (let y = targetY; y >= lowerBound; y--) {
+        if (isWhitespaceRow(y)) return y
+      }
+      const upperBound = Math.min(imgH, targetY + 40)
+      for (let y = targetY + 1; y <= upperBound; y++) {
+        if (isWhitespaceRow(y)) return y
+      }
+      return targetY
+    }
+
+    const pdf = new jsPDF('p', 'mm', 'a4')
+    let yOffset = 0
+    let firstPage = true
+
+    while (yOffset < imgH) {
+      if (!firstPage) pdf.addPage()
+      firstPage = false
+
+      const remaining = imgH - yOffset
+      let sliceH: number
+      if (remaining <= pageHeightPx) {
+        sliceH = remaining
+      } else {
+        const naturalCut = yOffset + pageHeightPx
+        const safeCut = findSafeCut(yOffset, naturalCut)
+        sliceH = safeCut - yOffset
+      }
+
+      const sliceCanvas = document.createElement('canvas')
+      sliceCanvas.width = imgW
+      sliceCanvas.height = sliceH
+      const ctx = sliceCanvas.getContext('2d')
+      ctx?.drawImage(canvas, 0, yOffset, imgW, sliceH, 0, 0, imgW, sliceH)
+
+      pdf.addImage(
+        sliceCanvas.toDataURL('image/jpeg', 0.92),
+        'JPEG',
+        0,
+        0,
+        PDF_W_MM,
+        sliceH * mmPerPx
+      )
+      yOffset += sliceH
+    }
+
+    const clientName = (payload.clientDisplayName ?? '').trim()
+    const safeName = clientName.replace(/[^a-zA-Z0-9 ]/g, '').trim()
+    const filename = safeName ? `${safeName}-Wellness-Report.pdf` : 'Wellness-Report.pdf'
+    pdf.save(filename)
+
+    return { ok: true }
+  } catch (err) {
+    console.error('[downloadZenPlanPdf]', err)
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'PDF generation failed',
+    }
+  } finally {
+    if (iframe.parentNode) iframe.parentNode.removeChild(iframe)
+  }
 }
 
 /**

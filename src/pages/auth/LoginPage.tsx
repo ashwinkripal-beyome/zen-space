@@ -122,11 +122,6 @@ export function LoginPage() {
                 Create account
               </Link>
             </p>
-            <p>
-              <Link to="/forgot-password" className="underline hover:text-foreground/90">
-                Forgot password?
-              </Link>
-            </p>
             <p className="flex flex-wrap justify-center gap-x-3 gap-y-1 text-xs">
               <Link to="/login/client">Client</Link>
               <span className="text-muted-foreground">·</span>

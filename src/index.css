@@ -6,43 +6,16 @@
 @tailwind utilities;
 
 @layer base {
-  :root {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
-    --destructive: oklch(0.577 0.245 27.325);
-    --destructive-foreground: 210 40% 98%;
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --radius: 0.625rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
-  }
-
-  .dark {
+  /*
+   * App is dark-only — the same tokens are applied at `:root` AND `.dark` so the
+   * theme works even if the `.dark` class is missing (e.g. before JS hydrates,
+   * iOS Safari quirks, or any external code stripping the class).
+   */
+  :root,
+  .dark,
+  html,
+  html.dark {
+    color-scheme: dark;
     --background: oklch(0.145 0 0);
     /* Primary text: soft off-white (not pure white) */
     --foreground: oklch(0.90 0.008 264);
@@ -69,6 +42,7 @@
     --chart-3: oklch(0.439 0 0);
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
+    --radius: 0.625rem;
     --sidebar: oklch(0.205 0 0);
     --sidebar-foreground: oklch(0.93 0.008 264);
     --sidebar-primary: oklch(0.488 0.243 264.376);
@@ -89,6 +63,7 @@
   body {
     @apply text-foreground;
     background-color: transparent;
+    color-scheme: dark;
   }
   html {
     color-scheme: dark;
@@ -108,14 +83,47 @@
       linear-gradient(168deg, #000000 0%, #000000 35%, #000000 70%, #0a1628 100%); */
     background-attachment: fixed;
   }
+
+  /*
+   * iOS Safari (and some Android browsers) ignore CSS variables when applying
+   * default UA styles to form controls in light system mode — they render
+   * `<input>`, `<select>`, `<textarea>`, `<button>` with light backgrounds.
+   * Force them to inherit colour and use a transparent background so our
+   * Tailwind / component styles win.
+   */
+  input,
+  select,
+  textarea,
+  button {
+    color-scheme: dark;
+    background-color: transparent;
+    color: inherit;
+    -webkit-text-fill-color: currentColor;
+  }
+
+  /* iOS Safari paints autofilled inputs with a yellow/white background.
+     Remove the autofill background tint and keep our dark glass look. */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  input:-webkit-autofill:active,
+  textarea:-webkit-autofill,
+  select:-webkit-autofill {
+    -webkit-text-fill-color: var(--foreground);
+    -webkit-box-shadow: 0 0 0 1000px transparent inset;
+    box-shadow: 0 0 0 1000px transparent inset;
+    transition: background-color 5000s ease-in-out 0s;
+    caret-color: var(--foreground);
+  }
 }
 
-/* Legacy template tokens (h1–h2, code): dark appearance always — not tied to OS theme */
-html.dark {
+/* Legacy template tokens (h1–h2, code): dark appearance always — not tied to OS theme.
+   Kept as `html.dark` AND mirrored into `:root` below so behaviour is identical with or without the class. */
+html.dark,
+:root {
   --text: var(--muted-foreground);
   --text-h: var(--foreground);
   --bg: #16171d;
-  --border: #2e303a;
   --code-bg: #1f2028;
   --accent: #c084fc;
   --accent-bg: rgba(192, 132, 252, 0.15);
@@ -203,18 +211,7 @@ html.dark {
 }
 
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
-
+  /* Typography + base typography settings — colour tokens are inherited from the dark `:root`/`.dark` block above. */
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
   --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
@@ -222,7 +219,7 @@ html.dark {
   font: 16px/145% var(--sans);
   letter-spacing: 0.18px;
   color-scheme: dark;
-  color: var(--text);
+  color: var(--foreground);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;

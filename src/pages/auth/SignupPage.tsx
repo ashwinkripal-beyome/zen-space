@@ -10,7 +10,9 @@ import { Label } from '@/components/ui/label'
 export function SignupPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [name, setName] = useState('')
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
+  const [phone, setPhone] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const { user, loading, signUp } = useAuth()
 
@@ -19,7 +21,7 @@ export function SignupPage() {
     if (submitting) return
     setSubmitting(true)
     try {
-      const { error } = await signUp(email, password, name)
+      const { error } = await signUp(email, password, { firstName, lastName, phone })
       if (error) toast.error(error.message)
       else toast.success('Check your email to confirm your account.')
     } finally {
@@ -36,19 +38,47 @@ export function SignupPage() {
       <Card className="w-full max-w-md zen-glass-card zen-ring-primary ring-0 shadow-none">
         <CardHeader className="text-center">
           <CardTitle className="text-3xl font-bold text-foreground">Create account</CardTitle>
-          <CardDescription className="text-muted-foreground">Client signup — name, email, password</CardDescription>
+          <CardDescription className="text-muted-foreground">Client signup</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="firstName" className="text-foreground">
+                  First name
+                </Label>
+                <Input
+                  id="firstName"
+                  value={firstName}
+                  onChange={e => setFirstName(e.target.value)}
+                  className="border-white/30 bg-white/20 text-foreground"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="lastName" className="text-foreground">
+                  Last name
+                </Label>
+                <Input
+                  id="lastName"
+                  value={lastName}
+                  onChange={e => setLastName(e.target.value)}
+                  className="border-white/30 bg-white/20 text-foreground"
+                  required
+                />
+              </div>
+            </div>
             <div className="space-y-2">
-              <Label htmlFor="name" className="text-foreground">
-                Full name
+              <Label htmlFor="phone" className="text-foreground">
+                Phone number
               </Label>
               <Input
-                id="name"
-                value={name}
-                onChange={e => setName(e.target.value)}
+                id="phone"
+                type="tel"
+                value={phone}
+                onChange={e => setPhone(e.target.value)}
                 className="border-white/30 bg-white/20 text-foreground"
+                placeholder="+91 98765 43210"
                 required
               />
             </div>
@@ -85,12 +115,12 @@ export function SignupPage() {
               variant="zen"
               size="lg"
             >
-              {submitting ? 'Please wait…' : 'Sign up'}
+              {submitting ? 'Please wait…' : 'Create account'}
             </Button>
           </form>
           <p className="mt-6 text-center text-sm text-muted-foreground">
             Already have an account?{' '}
-            <Link to="/login" className="font-medium text-foreground underline">
+            <Link to="/login" className="font-medium text-foreground underline hover:text-foreground/90">
               Sign in
             </Link>
           </p>

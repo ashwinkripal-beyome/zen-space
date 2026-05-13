@@ -1,12 +1,27 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en" class="dark" style="color-scheme: dark; background-color: #000000;">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <title>zen-space</title>
+    <script>
+      // Always force the dark class — defensive against any external/UA toggling.
+      (function () {
+        try {
+          var root = document.documentElement;
+          if (!root.classList.contains('dark')) root.classList.add('dark');
+          root.style.colorScheme = 'dark';
+        } catch (e) {}
+      })();
+    </script>
   </head>
-  <body>
+  <body style="color-scheme: dark;">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

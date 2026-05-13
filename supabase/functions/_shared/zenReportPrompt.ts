@@ -350,6 +350,109 @@ FINAL INSTRUCTION
 Output only the delimiter line and the ritual HTML. No other sections.`
 
 // ---------------------------------------------------------------------------
+// MENTAL REPROGRAMMING ONLY — self assessment reports (generate-zen-report-self, step 2)
+// ---------------------------------------------------------------------------
+export const ZEN_MENTAL_REPROGRAM_SYSTEM_PROMPT = `ROLE
+You are an expert Zen Wellness Therapist + Nervous System Specialist + Emotional Healing Coach.
+You output ONLY the Mental Reprogramming section (step 2 of the Fourfold Zen Ritual) with personalized affirmations for this client.
+
+MENTAL REPROGRAMMING
+
+Mention that it must be done every night.
+
+Subtitle: Why is this important?
+Identify the patterns that are deeply wired into the client's subconscious based on their key concerns and assessment data.
+Explain what mental reprogramming will replace these patterns with.
+
+Include:
+
+Release Statement
+"I command my subconscious mind that all patterns of [patterns], along with their roots, causes, beliefs, and emotional attachments, be taken away from me and sent into the universal consciousness."
+Replace [patterns] with the patterns deeply wired into the client's subconscious, derived from their key concerns.
+
+Replacement Statement
+"I command my subconscious mind to replace these patterns with [replacement] and the best program created by the universal consciousness for my highest good."
+Replace [replacement] with the best replacement for this specific client.
+
+Reassurance Statement
+"I command that this change takes place now and permanently within my consciousness and in every cell of my body."
+
+Affirmations (7)
+Mention that these must be done every morning and night.
+Must be:
+- Specific to this client's patterns and healing desires
+- Emotionally resonant
+- Identity-shifting ("I am…", "I trust…", "I release…", "I choose…")
+
+OUTPUT FORMAT RULE (CRITICAL)
+First output the delimiter line:
+---SECTION:RITUAL---
+Then output the Mental Reprogramming section as HTML only.
+
+HTML (NO markdown)
+- Valid HTML fragments only (no <!DOCTYPE>, no <html>, no <body>).
+- Allowed tags only: h2, h3, p, ul, ol, li, strong, em, br.
+- Use <h3>Mental Reprogramming</h3> as the section heading. Do NOT include a leading step number in this self-report-only output.
+- Present the seven affirmations as an HTML ordered or unordered list (<ol> or <ul> with <li>) so they can be extracted reliably.
+
+FINAL INSTRUCTION
+Output only the delimiter line and the Mental Reprogramming HTML. No other steps, no other sections.`
+
+// ---------------------------------------------------------------------------
+// REMAINING RITUAL (steps 1, 3, 4) — generated during plan step when mental reprogram already exists
+// ---------------------------------------------------------------------------
+export const ZEN_REMAINING_RITUAL_SYSTEM_PROMPT = `ROLE
+You are an expert Zen Wellness Therapist + Nervous System Specialist + Emotional Healing Coach.
+You output steps 1, 3, and 4 of the Fourfold Zen Ritual as HTML.
+Step 2 (Mental Reprogramming and Affirmations) has already been generated and will be merged by the system between your BEFORE and AFTER blocks.
+
+OUTPUT STRUCTURE (CRITICAL)
+You MUST output exactly two delimiter-separated blocks in this order:
+
+First output:
+---SECTION:RITUAL_BEFORE---
+Then write HTML for:
+- A brief intro (2–3 sentences): why healing requires daily structure; why subconscious + body + emotions must align
+- "This is your daily foundation practice. It remains constant every day."
+- Step 1: Somatic Release & Grounding — format the following VERBATIM content as clean HTML:
+
+"This is your first point of contact with your system. Before we change the mind, we signal the body that it is present, safe, and active. Through gentle stimulation and awareness, we bring the body into a calm, alert, and receptive state. Touch and pressure activate sensory receptors in the skin, increasing body awareness and helping regulate the nervous system. Instead of intensity, we awaken the system through subtle contact and attention.
+
+Somatic Activation:
+Stand or slowly walk on an acupressure mat for 1–3 minutes
+Take small, mindful steps (heel to toe), keeping your body relaxed and breath natural
+Step off the mat and gently tap your body with your palms, moving from feet to head
+Keep the tapping light, rhythmic, and relaxed, letting your attention follow the movement
+
+Grounding Awareness (Body Check-In):
+Sit comfortably (you may choose a Sacred Resonance Pyramid)
+Pause and bring your attention to the present moment
+Slowly notice your body, part by part (feet to head)
+Observe without trying to change anything
+If it feels intense, shift focus to your breath or surroundings
+
+This step prepares your system to move forward—awake, present, and ready to receive.
+
+Disclaimer: This is a gentle and adaptable practice. Move at a pace that feels comfortable, keeping all movements and sensations light and non-straining. During both the activation and awareness phases, avoid forcing your body or attention into discomfort. If you feel uneasy or overwhelmed at any point, simply pause and return to your breath or surroundings. This practice is supportive for well-being, but it is not a substitute for medical or therapeutic care."
+
+Then output:
+---SECTION:RITUAL_AFTER---
+Then write HTML for:
+- Step 3: Daily Zen Garden Practice — use EXACTLY this text: "Daily structured practice from the Zen Garden. A separate 18-week week-by-week schedule is provided in their Zen Space plan; follow the activities assigned for each week."
+- Step 4: Reflection & Integration — personalized for this client:
+    - Rate your emotional shift (1–5)
+    - One reflection question specific to this client's patterns and key concerns
+    - A gratitude statement related to their healing journey
+
+HTML FORMAT (CRITICAL)
+- Valid HTML fragments only (no <!DOCTYPE>, no <html>, no <body>).
+- Allowed tags only: h2, h3, p, ul, ol, li, strong, em, br.
+- Use <h3>1. Somatic Release & Grounding</h3>, <h3>3. Daily Zen Garden Practice</h3>, <h3>4. Reflection & Integration</h3> as step headings.
+
+FINAL INSTRUCTION
+Output only the two delimiter lines and their HTML blocks. Do NOT output Step 2 (Mental Reprogramming) — it is handled separately.`
+
+// ---------------------------------------------------------------------------
 // Band labels (matches the scoring logic in benchmarkAssessment.ts)
 // ---------------------------------------------------------------------------
 
@@ -497,6 +600,20 @@ export function buildRitualUserMessage(p: ReportDataParams): string {
 ${buildClientDataBlock(p)}`
 }
 
+/** User message for Mental Reprogramming only (self-report step 2). */
+export function buildMentalReprogramUserMessage(p: ReportDataParams): string {
+  return `Generate only the Mental Reprogramming section for this client. Match their patterns and key concerns from the data below.
+
+${buildClientDataBlock(p)}`
+}
+
+/** User message for remaining ritual steps 1, 3, 4 (when mental reprogram already exists). */
+export function buildRemainingRitualUserMessage(p: ReportDataParams): string {
+  return `Generate the Fourfold Zen Ritual steps 1, 3, and 4 for this client. Step 2 (Mental Reprogramming) is handled separately. Follow your system instructions exactly.
+
+${buildClientDataBlock(p)}`
+}
+
 /** User message for 18-week plan generation (includes Zen Garden dataset). */
 export function buildPlan18UserMessage(p: ReportDataParams): string {
   return `Create the 18-week personalized Zen Garden plan for this client. Follow your system instructions exactly.
@@ -533,6 +650,8 @@ const REPORT_DELIM = '---SECTION:REPORT---'
 const RITUAL_DELIM = '---SECTION:RITUAL---'
 export const PLAN_DELIM = '---SECTION:PLAN---'
 const FINAL_DELIM = '---SECTION:FINAL---'
+const RITUAL_BEFORE_DELIM = '---SECTION:RITUAL_BEFORE---'
+const RITUAL_AFTER_DELIM = '---SECTION:RITUAL_AFTER---'
 
 /** Self assessment / report step 1: report + final only (no ritual). */
 export function buildReportAndFinalDelimitedContent(sections: { report: string; final: string }): string {
@@ -587,6 +706,72 @@ export function assembleSupervisedReportContent(
   return assembleFullReportContent({
     report: s.reportSection,
     ritual,
+    plan,
+    final: s.finalNarrativeSection,
+  })
+}
+
+/**
+ * Parse the BEFORE/AFTER split from a remaining-ritual model response
+ * (ZEN_REMAINING_RITUAL_SYSTEM_PROMPT output).
+ */
+export function parseRemainingRitualSections(content: string): { before: string; after: string } {
+  const beforeIdx = content.indexOf(RITUAL_BEFORE_DELIM)
+  const afterIdx = content.indexOf(RITUAL_AFTER_DELIM)
+  if (beforeIdx === -1 || afterIdx === -1 || afterIdx <= beforeIdx) {
+    return { before: content.trim(), after: '' }
+  }
+  const before = content.substring(beforeIdx + RITUAL_BEFORE_DELIM.length, afterIdx).trim()
+  const after = content.substring(afterIdx + RITUAL_AFTER_DELIM.length).trim()
+  return { before, after }
+}
+
+/**
+ * Parse a mental-reprogramming-only model response (ZEN_MENTAL_REPROGRAM_SYSTEM_PROMPT output)
+ * into the ritual HTML string and extracted affirmations.
+ */
+export function parseMentalReprogramContent(content: string): { ritualSection: string; affirmations: string[] } {
+  const ritualSection = stripMentalReprogramHeadingNumber(parseRitualSectionOnly(content))
+  const affirmations = extractAffirmations(ritualSection)
+  return { ritualSection, affirmations }
+}
+
+function stripMentalReprogramHeadingNumber(html: string): string {
+  return html.replace(
+    /<h([23])([^>]*)>\s*(?:2\s*[.)-]?\s*)?Mental\s+Reprogramming\s*<\/h\1>/i,
+    '<h$1$2>Mental Reprogramming</h$1>'
+  )
+}
+
+function numberMentalReprogramHeading(html: string): string {
+  return html.replace(
+    /<h([23])([^>]*)>\s*(?:2\s*[.)-]?\s*)?Mental\s+Reprogramming\s*<\/h\1>/i,
+    '<h$1$2>2. Mental Reprogramming</h$1>'
+  )
+}
+
+/** Combine separate ritual parts into a single ritual HTML string. */
+export function assembleRitualFromParts(before: string, mental: string, after: string): string {
+  return [before, mental, after].filter(s => s.trim()).join('\n\n')
+}
+
+/**
+ * Assemble the full report content when the ritual already has mental reprogramming
+ * stored from a prior self-report step, and remaining ritual parts are newly generated.
+ */
+export function assemblePlanWithExistingMental(
+  reportAndFinalRaw: string,
+  existingMentalHtml: string,
+  remainingRitualRaw: string,
+  planModelRaw: string
+): string {
+  const s = parseReportSections(reportAndFinalRaw)
+  const { before, after } = parseRemainingRitualSections(remainingRitualRaw)
+  const ritualFull = assembleRitualFromParts(before, numberMentalReprogramHeading(existingMentalHtml), after)
+  const plan = parsePlanSectionOnly(planModelRaw)
+  return assembleFullReportContent({
+    report: s.reportSection,
+    ritual: ritualFull,
     plan,
     final: s.finalNarrativeSection,
   })

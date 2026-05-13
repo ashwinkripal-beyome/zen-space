@@ -15,6 +15,10 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { ClientObservationsForm } from '@/components/ClientObservationsForm'
+import {
+  CompanyDepartmentPicker,
+  type CompanySelectionState,
+} from '@/components/CompanyDepartmentPicker'
 import { ReportGenerationWaitOverlay } from '@/components/ReportGenerationWaitOverlay'
 import {
   BENCHMARK_QUESTIONS,
@@ -25,6 +29,7 @@ import {
 } from '@/data/benchmarkAssessment'
 import { useAuth } from '@/hooks/useAuth'
 import { parseBenchmarkAnswerValue } from '@/lib/benchmarkScoreUtils'
+import { setClientCompanySelection } from '@/lib/companyDirectory'
 import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
 import { messageFromFunctionInvokeFailure } from '@/lib/functionInvokeError'
@@ -370,7 +375,7 @@ function deriveMode(pathname: string): AssessmentMode {
 export function ClientAssessmentSessionPage() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { user } = useAuth()
+  const { user, profile, refetchProfile } = useAuth()
   const mode = deriveMode(location.pathname)
   const isSelf = mode === 'self'
 
@@ -385,11 +390,21 @@ export function ClientAssessmentSessionPage() {
   const [showDisclaimer, setShowDisclaimer] = useState(false)
   /** 0 = intro copy, 1 = how to answer (both must be seen before starting). */
   const [disclaimerStep, setDisclaimerStep] = useState(0)
+  const [showCompanyDialog, setShowCompanyDialog] = useState(false)
+  const [companySelection, setCompanySelection] = useState<CompanySelectionState>({
+    companyId: null,
+    departmentId: null,
+    notListed: false,
+  })
+  const [savingCompany, setSavingCompany] = useState(false)
   /** Blocks double commits before the next frame applies `disabled` on the card. */
   const commitInFlightRef = useRef(false)
 
   const modeTitle = isSelf ? 'Self Assessment' : 'Supervised Assessment'
   const reviewPath = `/app/client/assessment/${mode}/review`
+  const hasCompanySelection =
+    profile?.company_not_listed === true || Boolean(profile?.company_department_id)
+  const needsCompanyPrompt = isSelf && !hasCompanySelection
 
   const sessionReady = !booting && Boolean(user?.id)
   const staggerVisible = usePageStaggerVisible(sessionReady, `${phase}-${assessmentId ?? ''}`)
@@ -429,6 +444,15 @@ export function ClientAssessmentSessionPage() {
   useEffect(() => {
     if (showDisclaimer) setDisclaimerStep(0)
   }, [showDisclaimer])
+
+  useEffect(() => {
+    if (!showCompanyDialog) return
+    setCompanySelection({
+      companyId: null,
+      departmentId: profile?.company_department_id ?? null,
+      notListed: profile?.company_not_listed === true,
+    })
+  }, [showCompanyDialog, profile?.company_department_id, profile?.company_not_listed])
 
   useEffect(() => {
     let cancelled = false
@@ -910,13 +934,109 @@ export function ClientAssessmentSessionPage() {
                   onClick={() => {
                     setShowDisclaimer(false)
                     setDisclaimerStep(0)
+                    if (needsCompanyPrompt) {
+                      setShowCompanyDialog(true)
+                    }
                   }}
                 >
-                  Continue to assessment
+                  {needsCompanyPrompt ? 'Next' : 'Continue to assessment'}
                 </Button>
               </DialogFooter>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={showCompanyDialog}
+        onOpenChange={open => {
+          if (savingCompany) return
+          setShowCompanyDialog(open)
+        }}
+      >
+        <DialogContent
+          showCloseButton={false}
+          className="zen-glass-card rounded-2xl border-white/15 text-foreground"
+          onPointerDownOutside={e => e.preventDefault()}
+          onEscapeKeyDown={e => e.preventDefault()}
+        >
+          <DialogHeader>
+            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Before you begin
+            </p>
+            <DialogTitle className="text-foreground">Where do you work?</DialogTitle>
+            <DialogDescription className="leading-relaxed text-muted-foreground">
+              Select your company and department so we can tailor your guidance. If your company isn&apos;t on
+              the list, choose &quot;Not listed here&quot; to continue.
+            </DialogDescription>
+          </DialogHeader>
+
+          <CompanyDepartmentPicker
+            value={companySelection}
+            onChange={setCompanySelection}
+            idPrefix="assessment-company"
+            compact
+          />
+
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              type="button"
+              variant="zenOutline"
+              disabled={savingCompany}
+              onClick={() => {
+                setShowCompanyDialog(false)
+                setShowDisclaimer(true)
+                setDisclaimerStep(1)
+              }}
+            >
+              Back
+            </Button>
+            <Button
+              type="button"
+              variant="zen"
+              disabled={
+                savingCompany ||
+                (!companySelection.notListed &&
+                  (!companySelection.companyId || !companySelection.departmentId))
+              }
+              onClick={async () => {
+                if (savingCompany) return
+                setSavingCompany(true)
+                try {
+                  if (companySelection.notListed) {
+                    await setClientCompanySelection({
+                      companyId: null,
+                      departmentId: null,
+                      notListed: true,
+                    })
+                  } else if (companySelection.companyId && companySelection.departmentId) {
+                    await setClientCompanySelection({
+                      companyId: companySelection.companyId,
+                      departmentId: companySelection.departmentId,
+                      notListed: false,
+                    })
+                  }
+                  refetchProfile()
+                  setShowCompanyDialog(false)
+                } catch (err) {
+                  const message =
+                    err instanceof Error ? err.message : 'Could not save your selection.'
+                  toast.error(message)
+                } finally {
+                  setSavingCompany(false)
+                }
+              }}
+            >
+              {savingCompany ? (
+                <>
+                  <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
+                  Saving…
+                </>
+              ) : (
+                'Continue to assessment'
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

@@ -77,6 +77,7 @@ export function profileFormSyncKey(p: Profile | null | undefined): string {
   if (!p) return ''
   return [
     p.id,
+    p.email ?? '',
     p.gender ?? '',
     p.dob == null ? '' : String(p.dob),
     p.age ?? '',
@@ -85,6 +86,8 @@ export function profileFormSyncKey(p: Profile | null | undefined): string {
     p.phone_number ?? '',
     p.occupation ?? '',
     p.company ?? '',
+    p.company_department_id ?? '',
+    p.company_not_listed == null ? '' : String(p.company_not_listed),
     p.updated_at == null ? '' : p.updated_at,
   ].join('\0')
 }

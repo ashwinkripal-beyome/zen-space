@@ -2,9 +2,12 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1'
 import {
   ZEN_FOURFOLD_RITUAL_SYSTEM_PROMPT,
   ZEN_PLAN_18_SYSTEM_PROMPT,
+  ZEN_REMAINING_RITUAL_SYSTEM_PROMPT,
+  assemblePlanWithExistingMental,
   assembleSupervisedReportContent,
   buildPlan18UserMessage,
   buildReportAndFinalDelimitedContent,
+  buildRemainingRitualUserMessage,
   buildRitualUserMessage,
   parseReportSections,
 } from '../_shared/zenReportPrompt.ts'
@@ -200,6 +203,10 @@ Deno.serve(async (req: Request) => {
       .map(r => (r.question_text as string) || '')
       .filter(Boolean)
 
+    const isSelfAssessment = assessment.assessment_mode === 'self'
+    const existingMentalHtml = ((reportRow.ritual_section as string) || '').trim()
+    // Use remaining-ritual prompt when a self-report already has mental reprogramming stored
+    const hasExistingMental = isSelfAssessment && existingMentalHtml.length > 0
     const isSupervised = assessment.assessment_mode === 'supervised'
 
     const reportParams = {
@@ -289,6 +296,15 @@ Deno.serve(async (req: Request) => {
       })
     }
 
+    // Choose ritual system prompt: use remaining-ritual (steps 1,3,4) when mental reprogram
+    // already exists from self-report; otherwise generate the full Fourfold Zen Ritual.
+    const ritualSystemPrompt = hasExistingMental
+      ? ZEN_REMAINING_RITUAL_SYSTEM_PROMPT
+      : ZEN_FOURFOLD_RITUAL_SYSTEM_PROMPT
+    const ritualUserMessage = hasExistingMental
+      ? buildRemainingRitualUserMessage(reportParams)
+      : userMessageRitual
+
     const openaiRitualRes = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -299,8 +315,8 @@ Deno.serve(async (req: Request) => {
         model,
         temperature: 0.65,
         messages: [
-          { role: 'system', content: ZEN_FOURFOLD_RITUAL_SYSTEM_PROMPT },
-          { role: 'user', content: userMessageRitual },
+          { role: 'system', content: ritualSystemPrompt },
+          { role: 'user', content: ritualUserMessage },
         ],
       }),
     })
@@ -326,7 +342,9 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    const fullContent = assembleSupervisedReportContent(normalizedReportAndFinal, ritualOnlyRaw, planOnlyRaw)
+    const fullContent = hasExistingMental
+      ? assemblePlanWithExistingMental(normalizedReportAndFinal, existingMentalHtml, ritualOnlyRaw, planOnlyRaw)
+      : assembleSupervisedReportContent(normalizedReportAndFinal, ritualOnlyRaw, planOnlyRaw)
     const sections = parseReportSections(fullContent)
 
     const row = {

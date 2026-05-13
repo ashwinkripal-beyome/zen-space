@@ -88,28 +88,28 @@ export function TherapistProfilePage() {
       toast.error('First name and last name are required.')
       return
     }
-    if (!gender) {
-      toast.error('Please select a gender.')
-      return
-    }
     const day = parseInt(dobDay, 10)
     const month = parseInt(dobMonth, 10)
     const year = parseInt(dobYear, 10)
-    if (!day || !month || !year || year < MIN_YEAR || year > MAX_YEAR) {
-      toast.error('Please select a valid date of birth.')
-      return
-    }
-    const age = computeAge(year, month, day)
-    if (age < 18 || age > 120) {
-      toast.error('You must be between 18 and 120 years old.')
-      return
+    const hasDobInput = Boolean(dobDay || dobMonth || dobYear)
+    let dobStr: string | null = null
+    let age: number | null = null
+    if (hasDobInput) {
+      if (!day || !month || !year || year < MIN_YEAR || year > MAX_YEAR) {
+        toast.error('Please select a valid date of birth.')
+        return
+      }
+      age = computeAge(year, month, day)
+      if (age < 18 || age > 120) {
+        toast.error('You must be between 18 and 120 years old.')
+        return
+      }
+      dobStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
     }
     if (!phone.trim()) {
       toast.error('Phone number is required.')
       return
     }
-
-    const dobStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
 
     setSaving(true)
     const wasIncomplete = profile ? !isTherapistProfileComplete(profile) : true
@@ -167,7 +167,7 @@ export function TherapistProfilePage() {
         <CardHeader>
           <CardTitle>Your details</CardTitle>
           <CardDescription className="text-muted-foreground">
-            First name, last name, gender, date of birth, and phone number.
+            First name, last name, phone number, and optional personal details.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -194,8 +194,8 @@ export function TherapistProfilePage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="gender">Gender</Label>
-              <Select value={gender || undefined} onValueChange={setGender} required>
-                <SelectTrigger id="gender" aria-required>
+              <Select value={gender || undefined} onValueChange={setGender}>
+                <SelectTrigger id="gender">
                   <SelectValue placeholder="Select gender" />
                 </SelectTrigger>
                 <SelectContent>

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { Bell, LayoutDashboard, UserRound, Users } from 'lucide-react'
+import { Bell, Building2, LayoutDashboard, UserRound, Users } from 'lucide-react'
 import {
   AppContentPanel,
   AppShellRow,
@@ -74,6 +74,7 @@ export function TherapistLayout() {
           { to: '/app/therapist', end: true, label: 'Dashboard', icon: LayoutDashboard, lock: true },
           { to: '/app/therapist/clients', label: 'Clients', icon: Users, lock: true },
           { to: '/app/therapist/notifications', label: 'Notifications', icon: Bell, lock: true, badge: pendingCount },
+          { to: '/app/therapist/manage-companies', label: 'Manage companies', icon: Building2, lock: true },
           { to: '/app/therapist/profile', label: 'Profile', icon: UserRound, lock: false },
         ].map(({ to, end, label, icon: Icon, lock, badge }) => {
           const isLocked = lock && !profileComplete

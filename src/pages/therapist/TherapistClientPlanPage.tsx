@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { CalendarDays, ChevronDown, Download, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { PlanChecklist } from '@/components/PlanChecklist'
 import { PlanTimeline } from '@/components/PlanTimeline'
 import { PracticeDisclaimerDialog } from '@/components/PracticeDisclaimerDialog'
@@ -10,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuth } from '@/hooks/useAuth'
 import { pageStaggerItemStyle, usePageStaggerVisible } from '@/hooks/usePageStaggerVisible'
 import { supabase } from '@/lib/supabase'
-import { printZenPlanPdf } from '@/lib/zenPrintDocument'
+import { downloadZenPlanPdf } from '@/lib/zenPrintDocument'
 import { zenPrintPdfMetadata } from '@/lib/zenPrintPayloadHelpers'
 import { cn } from '@/lib/utils'
 
@@ -40,6 +41,7 @@ export function TherapistClientPlanPage() {
   const planContent = latestReport?.plan_section ?? null
   const ritualContent = latestReport?.ritual_section ?? null
   const reportId = latestReport?.id ?? null
+  const [pdfLoading, setPdfLoading] = useState(false)
   const [planExpanded, setPlanExpanded] = useState(false)
   const [planDisclaimerAcked, setPlanDisclaimerAcked] = useState(false)
   const [planDisclaimerOpen, setPlanDisclaimerOpen] = useState(false)
@@ -167,20 +169,25 @@ export function TherapistClientPlanPage() {
     )
   }
 
-  const handleDownloadPdf = () => {
-    if (!latestReport) return
+  const handleDownloadPdf = async () => {
+    if (!latestReport || pdfLoading) return
     const reportHtml = latestReport.report_section || latestReport.content || ''
     const ritualHtml = latestReport.ritual_section || ''
     const finalHtml = latestReport.final_narrative_section || ''
     const planHtml = latestReport.plan_section || ''
     const meta = zenPrintPdfMetadata(latestReport.created_at, clientPrintProfile, latestReport.assessment)
-    printZenPlanPdf({
+    setPdfLoading(true)
+    const result = await downloadZenPlanPdf({
       reportHtml,
       finalNarrativeHtml: finalHtml || undefined,
       ritualHtml: ritualHtml || undefined,
       planHtml: planHtml || undefined,
       ...meta,
     })
+    setPdfLoading(false)
+    if (!result.ok) {
+      toast.error('Could not generate PDF. ' + (result.error ?? ''))
+    }
   }
 
   const canPrintPdf =
@@ -255,11 +262,15 @@ export function TherapistClientPlanPage() {
             type="button"
             variant="zenOutline"
             size="sm"
-            onClick={handleDownloadPdf}
-            disabled={!canPrintPdf}
+            onClick={() => void handleDownloadPdf()}
+            disabled={!canPrintPdf || pdfLoading}
           >
-            <Download className="mr-1.5 size-4" aria-hidden />
-            Download PDF
+            {pdfLoading ? (
+              <Loader2 className="mr-1.5 size-4 animate-spin" aria-hidden />
+            ) : (
+              <Download className="mr-1.5 size-4" aria-hidden />
+            )}
+            {pdfLoading ? 'Generating…' : 'Download PDF'}
           </Button>
         ) : null}
       </div>
