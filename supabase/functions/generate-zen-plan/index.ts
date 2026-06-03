@@ -80,15 +80,17 @@ Deno.serve(async (req: Request) => {
       })
     }
 
+    const token = authHeader.replace(/^Bearer\s+/i, '')
     const supabaseUser = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
     })
     const {
       data: { user },
       error: userErr,
-    } = await supabaseUser.auth.getUser()
+    } = await supabaseUser.auth.getUser(token)
     if (userErr || !user) {
-      return new Response(JSON.stringify({ error: 'Invalid session' }), {
+      console.error('getUser failed', userErr?.message)
+      return new Response(JSON.stringify({ error: 'Invalid session', detail: userErr?.message ?? null }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
@@ -257,10 +259,10 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    const normalizedReportAndFinal = buildReportAndFinalDelimitedContent({
-      report: parsed.reportSection,
-      final: parsed.finalNarrativeSection,
-    })
+    // Keep toParse intact — it may contain sub-section delimiters (new format).
+    // Building a normalizedReportAndFinal from parsed.reportSection would strip those,
+    // causing assemblePlanWithExistingMental to produce un-parseable content and
+    // plan_section / report_*  columns to end up null.
 
     const model = Deno.env.get('OPENAI_MODEL') || 'gpt-4o-mini'
 
@@ -348,10 +350,10 @@ Deno.serve(async (req: Request) => {
     }
 
     const fullContent = hasExistingMental
-      ? assemblePlanWithExistingMental(normalizedReportAndFinal, existingMentalHtml, ritualOnlyRaw, planOnlyRaw)
-      : assembleSupervisedReportContent(normalizedReportAndFinal, ritualOnlyRaw, planOnlyRaw)
+      ? assemblePlanWithExistingMental(toParse, existingMentalHtml, ritualOnlyRaw, planOnlyRaw)
+      : assembleSupervisedReportContent(toParse, ritualOnlyRaw, planOnlyRaw)
     const sections = parseReportSections(fullContent)
-    const reportDb = buildReportDbFields(parseReportSubsections(normalizedReportAndFinal), normalizedReportAndFinal)
+    const reportDb = buildReportDbFields(parseReportSubsections(toParse), toParse)
     const ritualParsed = hasExistingMental
       ? {
           ...parseRemainingRitualSubsections(ritualOnlyRaw),

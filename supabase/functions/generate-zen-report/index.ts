@@ -77,15 +77,17 @@ Deno.serve(async (req: Request) => {
       })
     }
 
+    const token = authHeader.replace(/^Bearer\s+/i, '')
     const supabaseUser = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
     })
     const {
       data: { user },
       error: userErr,
-    } = await supabaseUser.auth.getUser()
+    } = await supabaseUser.auth.getUser(token)
     if (userErr || !user) {
-      return new Response(JSON.stringify({ error: 'Invalid session' }), {
+      console.error('getUser failed', userErr?.message)
+      return new Response(JSON.stringify({ error: 'Invalid session', detail: userErr?.message ?? null }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })

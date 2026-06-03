@@ -794,7 +794,9 @@ function hasRitualSubDelimiters(content: string): boolean {
   return (
     content.includes(RITUAL_EXPLAIN_DELIM) ||
     content.includes(RITUAL_SOMATIC_DELIM) ||
-    content.includes(RITUAL_MENTAL_DELIM)
+    content.includes(RITUAL_MENTAL_DELIM) ||
+    content.includes(RITUAL_DAILY_DELIM) ||
+    content.includes(RITUAL_REFLECT_DELIM)
   )
 }
 
@@ -1116,6 +1118,22 @@ export function assembleFullReportContentFromSubsections(
 }
 
 /**
+ * When individual report sub-sections are all empty (old-format content without sub-section
+ * delimiters), fall back to placing the full reportSection in clientInfo so that
+ * assembleFullReportContentFromSubsections produces content that parseReportSections can
+ * correctly parse for plan_section extraction.
+ */
+function normalizeReportPartsForAssembly(
+  reportDb: ReturnType<typeof buildReportDbFields>
+): ReportSubsections {
+  const parts = { ...reportDb.reportSubsections, finalNarrative: reportDb.finalNarrativeSection }
+  if (!reportSubsectionsHaveContent(parts) && reportDb.reportSection.trim()) {
+    return { ...parts, clientInfo: reportDb.reportSection }
+  }
+  return parts
+}
+
+/**
  * Merge report+final, separate ritual, and plan model responses (supervised & therapist plan generation).
  */
 export function assembleSupervisedReportContent(
@@ -1128,10 +1146,7 @@ export function assembleSupervisedReportContent(
   const ritualParsed = parseRitualSubsections(ritualModelRaw)
   const ritualDb = buildRitualDbFields(ritualParsed, ritualModelRaw)
   const plan = parsePlanSectionOnly(planModelRaw)
-  const reportParts: ReportSubsections = {
-    ...reportDb.reportSubsections,
-    finalNarrative: reportDb.finalNarrativeSection,
-  }
+  const reportParts: ReportSubsections = normalizeReportPartsForAssembly(reportDb)
   return assembleFullReportContentFromSubsections(reportParts, ritualDb.ritualSubsections, plan)
 }
 
@@ -1218,10 +1233,7 @@ export function assemblePlanWithExistingMental(
     reflect: remainingParts.reflect,
   }
   const plan = parsePlanSectionOnly(planModelRaw)
-  const reportParts: ReportSubsections = {
-    ...reportDb.reportSubsections,
-    finalNarrative: reportDb.finalNarrativeSection,
-  }
+  const reportParts: ReportSubsections = normalizeReportPartsForAssembly(reportDb)
   return assembleFullReportContentFromSubsections(reportParts, ritualParts, plan)
 }
 

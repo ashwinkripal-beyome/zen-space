@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CalendarDays, ChevronDown, ClipboardPenLine, Download, Loader2 } from 'lucide-react'
+import { CalendarDays, ChevronDown, ClipboardPenLine, Download, Loader2, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { PlanChecklist } from '@/components/PlanChecklist'
 import { PlanTimeline } from '@/components/PlanTimeline'
@@ -47,7 +47,15 @@ export function ClientPlanPage() {
   const ritualContent = latestReport?.ritual_section ?? null
   const ritualDisplayParts = latestReport ? resolveRitualDisplayParts(latestReport) : []
   const reportId = latestReport?.id ?? null
-  const hasPlanOrRitual = Boolean(planContent || ritualContent)
+  const hasPlanOrRitual = Boolean(
+    planContent ||
+    ritualContent ||
+    latestReport?.ritual_explain ||
+    latestReport?.ritual_somatic ||
+    latestReport?.ritual_mental ||
+    latestReport?.ritual_daily ||
+    latestReport?.ritual_reflect
+  )
   const [planExpanded, setPlanExpanded] = useState(false)
   const [planDisclaimerAcked, setPlanDisclaimerAcked] = useState(false)
   const [planDisclaimerOpen, setPlanDisclaimerOpen] = useState(false)
@@ -270,7 +278,19 @@ export function ClientPlanPage() {
         className="flex flex-wrap items-start justify-between gap-4 print:hidden"
         style={pageStaggerItemStyle(0, staggerVisible)}
       >
-        <h1 className="text-3xl font-bold text-foreground">Your Personalized Plan</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-3xl font-bold text-foreground">Your Personalized Plan</h1>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-8 text-muted-foreground hover:text-foreground"
+            onClick={() => void load()}
+            title="Refresh"
+          >
+            <RefreshCw className="size-4" aria-hidden />
+          </Button>
+        </div>
         {canPrintPdf ? (
           <Button
             type="button"
