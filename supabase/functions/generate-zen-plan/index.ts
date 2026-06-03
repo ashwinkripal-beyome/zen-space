@@ -7,9 +7,14 @@ import {
   assembleSupervisedReportContent,
   buildPlan18UserMessage,
   buildReportAndFinalDelimitedContent,
+  buildReportDbFields,
+  buildRitualDbFields,
   buildRemainingRitualUserMessage,
   buildRitualUserMessage,
   parseReportSections,
+  parseReportSubsections,
+  parseRitualSubsections,
+  parseRemainingRitualSubsections,
 } from '../_shared/zenReportPrompt.ts'
 
 const corsHeaders: Record<string, string> = {
@@ -346,13 +351,34 @@ Deno.serve(async (req: Request) => {
       ? assemblePlanWithExistingMental(normalizedReportAndFinal, existingMentalHtml, ritualOnlyRaw, planOnlyRaw)
       : assembleSupervisedReportContent(normalizedReportAndFinal, ritualOnlyRaw, planOnlyRaw)
     const sections = parseReportSections(fullContent)
+    const reportDb = buildReportDbFields(parseReportSubsections(normalizedReportAndFinal), normalizedReportAndFinal)
+    const ritualParsed = hasExistingMental
+      ? {
+          ...parseRemainingRitualSubsections(ritualOnlyRaw),
+          mental: existingMentalHtml.trim(),
+          usedNewFormat: true,
+        }
+      : parseRitualSubsections(ritualOnlyRaw)
+    const ritualDb = buildRitualDbFields(ritualParsed, ritualOnlyRaw)
 
     const row = {
       content: fullContent,
-      report_section: sections.reportSection || null,
-      ritual_section: sections.ritualSection || null,
+      report_section: reportDb.reportSection || sections.reportSection || null,
+      ritual_section: ritualDb.ritualSection || sections.ritualSection || null,
       plan_section: sections.planSection || null,
-      final_narrative_section: sections.finalNarrativeSection || null,
+      final_narrative_section: reportDb.finalNarrativeSection || sections.finalNarrativeSection || null,
+      report_client_info: reportDb.report_client_info,
+      report_key_concerns: reportDb.report_key_concerns,
+      report_current_state: reportDb.report_current_state,
+      report_balance_zone: reportDb.report_balance_zone,
+      report_blossom_zone: reportDb.report_blossom_zone,
+      report_bliss_zone: reportDb.report_bliss_zone,
+      report_integrated_interpretation: reportDb.report_integrated_interpretation,
+      ritual_explain: ritualDb.ritual_explain,
+      ritual_somatic: ritualDb.ritual_somatic,
+      ritual_mental: ritualDb.ritual_mental || (existingMentalHtml.trim() ? existingMentalHtml.trim() : null),
+      ritual_daily: ritualDb.ritual_daily,
+      ritual_reflect: ritualDb.ritual_reflect,
       affirmations: sections.affirmations.length > 0 ? sections.affirmations : null,
     }
 

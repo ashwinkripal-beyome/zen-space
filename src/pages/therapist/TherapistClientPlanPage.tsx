@@ -5,7 +5,8 @@ import { toast } from 'sonner'
 import { PlanChecklist } from '@/components/PlanChecklist'
 import { PlanTimeline } from '@/components/PlanTimeline'
 import { PracticeDisclaimerDialog } from '@/components/PracticeDisclaimerDialog'
-import { ReportBody } from '@/components/ReportBody'
+import { RitualSectionsView } from '@/components/RitualSectionsView'
+import { resolveRitualDisplayParts } from '@/lib/resolveReportSections'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuth } from '@/hooks/useAuth'
@@ -27,6 +28,11 @@ export function TherapistClientPlanPage() {
     ritual_section: string | null
     final_narrative_section: string | null
     content: string | null
+    ritual_explain: string | null
+    ritual_somatic: string | null
+    ritual_mental: string | null
+    ritual_daily: string | null
+    ritual_reflect: string | null
     created_at: string | null
     assessment: { score_total?: number | null; score_data?: unknown } | null
   } | null>(null)
@@ -40,6 +46,7 @@ export function TherapistClientPlanPage() {
 
   const planContent = latestReport?.plan_section ?? null
   const ritualContent = latestReport?.ritual_section ?? null
+  const ritualDisplayParts = latestReport ? resolveRitualDisplayParts(latestReport) : []
   const reportId = latestReport?.id ?? null
   const [pdfLoading, setPdfLoading] = useState(false)
   const [planExpanded, setPlanExpanded] = useState(false)
@@ -77,7 +84,7 @@ export function TherapistClientPlanPage() {
     let { data, error } = await supabase
       .from('reports')
       .select(
-        'id, plan_section, report_section, ritual_section, final_narrative_section, content, created_at, assessments ( score_total, score_data )'
+        'id, plan_section, report_section, ritual_section, final_narrative_section, content, ritual_explain, ritual_somatic, ritual_mental, ritual_daily, ritual_reflect, created_at, assessments ( score_total, score_data )'
       )
       .eq('client_id', clientId)
       .order('created_at', { ascending: false })
@@ -111,6 +118,11 @@ export function TherapistClientPlanPage() {
         ritual_section: (row.ritual_section as string) || null,
         final_narrative_section: (row.final_narrative_section as string) || null,
         content: (row.content as string) || null,
+        ritual_explain: (row.ritual_explain as string) || null,
+        ritual_somatic: (row.ritual_somatic as string) || null,
+        ritual_mental: (row.ritual_mental as string) || null,
+        ritual_daily: (row.ritual_daily as string) || null,
+        ritual_reflect: (row.ritual_reflect as string) || null,
         created_at: typeof row.created_at === 'string' ? row.created_at : null,
         assessment: assessmentRow
           ? {
@@ -299,8 +311,10 @@ export function TherapistClientPlanPage() {
                   />
                 </button>
                 <div className={cn('mt-4 px-0.5', !ritualExpanded && 'hidden')} aria-hidden={!ritualExpanded}>
-                  {ritualContent ? (
-                    <ReportBody content={ritualContent} />
+                  {ritualDisplayParts.length > 0 ? (
+                    <RitualSectionsView parts={ritualDisplayParts} />
+                  ) : ritualContent ? (
+                    <RitualSectionsView parts={[{ id: 'legacy', title: 'Fourfold Zen ritual', html: ritualContent }]} />
                   ) : (
                     <p className="py-4 text-muted-foreground">No fourfold ritual content on this report yet.</p>
                   )}

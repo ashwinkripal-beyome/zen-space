@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { CalendarDays, Loader2, Mail, Phone, RefreshCw } from 'lucide-react'
+import { CalendarDays, Loader2, Mail, Phone, RefreshCw, StickyNote, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -33,7 +34,36 @@ import { cn } from '@/lib/utils'
 const glassReport = cn('zen-glass-card ring-0 shadow-none', 'zen-ring-primary')
 const glassPlan = cn('zen-glass-card ring-0 shadow-none', 'zen-ring-secondary')
 const glassControls = cn('zen-glass-card ring-0 shadow-none', 'zen-ring-secondary')
+const glassNotes = cn('zen-glass-card ring-0 shadow-none', 'zen-ring-primary')
 const glassProfile = cn('zen-glass-card ring-0 shadow-none', 'zen-ring-primary')
+
+const NOTE_BODY_MAX = 4000
+
+function formatNoteDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString(undefined, {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    })
+  } catch {
+    return iso
+  }
+}
+
+type TherapistNoteAuthor = ProfileNameFields & {
+  email?: string | null
+}
+
+type ClientTherapistNoteRow = {
+  id: string
+  body: string
+  created_at: string
+  therapist_id: string
+  therapist: TherapistNoteAuthor | TherapistNoteAuthor[] | null
+}
 
 function formatDobDisplay(iso: string | null | undefined): string {
   if (!iso?.trim()) return '—'
@@ -113,6 +143,12 @@ export function TherapistClientDetailPage() {
   const [savingStatus, setSavingStatus] = useState(false)
   const [markAsOpen, setMarkAsOpen] = useState(false)
   const [hasCompletedSelfAssessment, setHasCompletedSelfAssessment] = useState(false)
+  const [notes, setNotes] = useState<ClientTherapistNoteRow[]>([])
+  const [notesLoading, setNotesLoading] = useState(false)
+  const [newNoteBody, setNewNoteBody] = useState('')
+  const [savingNote, setSavingNote] = useState(false)
+  const [deletingNoteId, setDeletingNoteId] = useState<string | null>(null)
+  const [noteToDelete, setNoteToDelete] = useState<ClientTherapistNoteRow | null>(null)
 
   const load = useCallback(async () => {
     if (!user?.id || !clientId) {
@@ -205,6 +241,98 @@ export function TherapistClientDetailPage() {
   useEffect(() => {
     void load()
   }, [load])
+
+  const loadNotes = useCallback(async () => {
+    if (!clientId) {
+      setNotes([])
+      return
+    }
+    setNotesLoading(true)
+    try {
+      const { data, error } = await supabase
+        .from('client_therapist_notes')
+        .select(
+          `
+          id,
+          body,
+          created_at,
+          therapist_id,
+          therapist:profiles!client_therapist_notes_therapist_id_fkey (
+            name,
+            first_name,
+            last_name,
+            email
+          )
+        `
+        )
+        .eq('client_id', clientId)
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.error('[client_therapist_notes]', error)
+        toast.error(error.message)
+        setNotes([])
+        return
+      }
+      setNotes((data ?? []) as ClientTherapistNoteRow[])
+    } finally {
+      setNotesLoading(false)
+    }
+  }, [clientId])
+
+  useEffect(() => {
+    if (profile && clientId) void loadNotes()
+  }, [profile, clientId, loadNotes])
+
+  const handleAddNote = async () => {
+    if (!user?.id || !clientId) return
+    const body = newNoteBody.trim()
+    if (!body) {
+      toast.error('Enter a note before saving')
+      return
+    }
+    if (body.length > NOTE_BODY_MAX) {
+      toast.error(`Note must be ${NOTE_BODY_MAX} characters or fewer`)
+      return
+    }
+    setSavingNote(true)
+    const { error } = await supabase.from('client_therapist_notes').insert({
+      client_id: clientId,
+      therapist_id: user.id,
+      body,
+    })
+    if (error) {
+      toast.error(error.message)
+    } else {
+      toast.success('Note added')
+      setNewNoteBody('')
+      void loadNotes()
+    }
+    setSavingNote(false)
+  }
+
+  const handleConfirmDeleteNote = async () => {
+    if (!noteToDelete) return
+    const noteId = noteToDelete.id
+    setDeletingNoteId(noteId)
+    const { error } = await supabase.from('client_therapist_notes').delete().eq('id', noteId)
+    if (error) {
+      toast.error(error.message)
+    } else {
+      toast.success('Note deleted')
+      setNotes(prev => prev.filter(n => n.id !== noteId))
+      setNoteToDelete(null)
+    }
+    setDeletingNoteId(null)
+  }
+
+  const therapistLabelForNote = (note: ClientTherapistNoteRow): string => {
+    const rel = note.therapist
+    const author = Array.isArray(rel) ? rel[0] : rel
+    if (author) return formatClientDisplayName(author)
+    if (note.therapist_id === user?.id) return 'You'
+    return 'Therapist'
+  }
 
   // Assessment override controls
   const [selfLastCompleted, setSelfLastCompleted] = useState<string | null>(null)
@@ -593,6 +721,89 @@ export function TherapistClientDetailPage() {
         </Card>
       </div>
 
+      <Card className={glassNotes} style={pageStaggerItemStyle(4, staggerVisible)}>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-foreground">
+            <StickyNote className="size-4 text-sky-300" aria-hidden />
+            Notes
+          </CardTitle>
+          <CardDescription className="text-muted-foreground">
+            Shared notes for this client. Visible to all therapists; each note shows who added it.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <textarea
+              value={newNoteBody}
+              onChange={e => setNewNoteBody(e.target.value)}
+              placeholder="Add a note for other therapists…"
+              rows={3}
+              maxLength={NOTE_BODY_MAX}
+              disabled={savingNote}
+              className="w-full rounded-xl border border-white/20 bg-white/5 px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-sky-400/50 focus:outline-none focus:ring-1 focus:ring-sky-400/30 disabled:opacity-60"
+            />
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs text-muted-foreground">
+                {newNoteBody.length}/{NOTE_BODY_MAX}
+              </p>
+              <Button
+                type="button"
+                size="sm"
+                variant="zen"
+                disabled={savingNote || !newNoteBody.trim()}
+                onClick={() => void handleAddNote()}
+              >
+                {savingNote ? <Loader2 className="size-3.5 animate-spin" /> : 'Add note'}
+              </Button>
+            </div>
+          </div>
+
+          {notesLoading ? (
+            <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" aria-hidden />
+              Loading notes…
+            </div>
+          ) : notes.length === 0 ? (
+            <p className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-muted-foreground">
+              No notes yet. Add the first note above.
+            </p>
+          ) : (
+            <ul className="space-y-3">
+              {notes.map(note => (
+                <li
+                  key={note.id}
+                  className="flex flex-col gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 sm:flex-row sm:items-start sm:justify-between"
+                >
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <p className="text-sm font-medium text-foreground">{therapistLabelForNote(note)}</p>
+                    <p className="text-xs text-muted-foreground">{formatNoteDate(note.created_at)}</p>
+                    <p className="whitespace-pre-wrap text-sm text-foreground">{note.body}</p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="zenOutline"
+                    className="shrink-0 self-end sm:self-start"
+                    disabled={deletingNoteId === note.id}
+                    onClick={() => setNoteToDelete(note)}
+                    aria-label="Delete note"
+                  >
+                    {deletingNoteId === note.id ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <>
+                        <Trash2 className="size-3.5" aria-hidden />
+                        <span className="sr-only sm:not-sr-only sm:ml-1.5">Delete</span>
+                      </>
+                    )}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
       <Card className={glassControls} style={pageStaggerItemStyle(5, staggerVisible)}>
         <CardHeader>
           <CardTitle className="text-foreground">Assessment Controls</CardTitle>
@@ -664,6 +875,53 @@ export function TherapistClientDetailPage() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog
+        open={noteToDelete != null}
+        onOpenChange={open => {
+          if (!open && deletingNoteId == null) setNoteToDelete(null)
+        }}
+      >
+        <DialogContent className="zen-glass-card rounded-2xl border-white/15 text-foreground">
+          <DialogHeader>
+            <DialogTitle className="text-foreground">Delete note?</DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              This note from {noteToDelete ? therapistLabelForNote(noteToDelete) : 'this therapist'} will be
+              removed for all therapists. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          {noteToDelete ? (
+            <p className="line-clamp-4 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-foreground">
+              {noteToDelete.body}
+            </p>
+          ) : null}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="zenOutline"
+              disabled={deletingNoteId != null}
+              onClick={() => setNoteToDelete(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="zen"
+              disabled={deletingNoteId != null}
+              onClick={() => void handleConfirmDeleteNote()}
+            >
+              {deletingNoteId != null ? (
+                <>
+                  <Loader2 className="mr-2 size-3.5 animate-spin" aria-hidden />
+                  Deleting…
+                </>
+              ) : (
+                'Delete'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Mark as dialog — styled like the assessment disclaimer */}
       <Dialog open={markAsOpen} onOpenChange={setMarkAsOpen}>

@@ -3,7 +3,9 @@ import { Link, useParams } from 'react-router-dom'
 import { ChevronLeft, Download, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { PracticeDisclaimerDialog } from '@/components/PracticeDisclaimerDialog'
-import { ReportBody } from '@/components/ReportBody'
+import { ReportSectionsView } from '@/components/ReportSectionsView'
+import { RitualSectionsView } from '@/components/RitualSectionsView'
+import { resolveReportDisplayParts, resolveRitualDisplayParts } from '@/lib/resolveReportSections'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { useAuth } from '@/hooks/useAuth'
@@ -24,6 +26,18 @@ type ReportData = {
   finalNarrativeSection: string | null
   planSection: string | null
   content: string | null
+  report_client_info: string | null
+  report_key_concerns: string | null
+  report_current_state: string | null
+  report_balance_zone: string | null
+  report_blossom_zone: string | null
+  report_bliss_zone: string | null
+  report_integrated_interpretation: string | null
+  ritual_explain: string | null
+  ritual_somatic: string | null
+  ritual_mental: string | null
+  ritual_daily: string | null
+  ritual_reflect: string | null
   createdAt: string | null
   assessment: { score_total?: number | null; score_data?: unknown } | null
 }
@@ -48,7 +62,7 @@ export function ClientReportDetailPage() {
     let { data, error } = await supabase
       .from('reports')
       .select(
-        'report_section, ritual_section, final_narrative_section, plan_section, content, created_at, assessments ( score_total, score_data )'
+        'report_section, ritual_section, final_narrative_section, plan_section, content, report_client_info, report_key_concerns, report_current_state, report_balance_zone, report_blossom_zone, report_bliss_zone, report_integrated_interpretation, ritual_explain, ritual_somatic, ritual_mental, ritual_daily, ritual_reflect, created_at, assessments ( score_total, score_data )'
       )
       .eq('id', reportId)
       .eq('client_id', user.id)
@@ -78,6 +92,18 @@ export function ClientReportDetailPage() {
         finalNarrativeSection: (row.final_narrative_section as string) || null,
         planSection: (row.plan_section as string) || null,
         content: (row.content as string) || null,
+        report_client_info: (row.report_client_info as string) || null,
+        report_key_concerns: (row.report_key_concerns as string) || null,
+        report_current_state: (row.report_current_state as string) || null,
+        report_balance_zone: (row.report_balance_zone as string) || null,
+        report_blossom_zone: (row.report_blossom_zone as string) || null,
+        report_bliss_zone: (row.report_bliss_zone as string) || null,
+        report_integrated_interpretation: (row.report_integrated_interpretation as string) || null,
+        ritual_explain: (row.ritual_explain as string) || null,
+        ritual_somatic: (row.ritual_somatic as string) || null,
+        ritual_mental: (row.ritual_mental as string) || null,
+        ritual_daily: (row.ritual_daily as string) || null,
+        ritual_reflect: (row.ritual_reflect as string) || null,
         createdAt: typeof row.created_at === 'string' ? row.created_at : null,
         assessment: assessmentRow
           ? {
@@ -158,6 +184,8 @@ export function ClientReportDetailPage() {
   const ritualContent = report.ritualSection || ''
   const finalContent = report.finalNarrativeSection || ''
   const planSection = report.planSection || ''
+  const reportDisplayParts = resolveReportDisplayParts(report)
+  const ritualDisplayParts = resolveRitualDisplayParts(report)
 
   const openFourfoldTab = () => {
     setFourfoldDisclaimerOpen(true)
@@ -228,24 +256,12 @@ export function ClientReportDetailPage() {
         style={pageStaggerItemStyle(2, staggerVisible)}
       >
         <CardContent className="pt-6">
-          {tab === 'report' && (
-            <>
-              {reportContent ? (
-                <ReportBody content={reportContent} />
-              ) : (
-                <p className="py-8 text-center text-muted-foreground">No report content available.</p>
-              )}
-              {finalContent ? (
-                <div className="mt-10 border-t border-white/10 pt-8">
-                  <h2 className="mb-4 text-xl font-semibold text-foreground">Final narrative</h2>
-                  <ReportBody content={finalContent} />
-                </div>
-              ) : null}
-            </>
-          )}
+          {tab === 'report' && <ReportSectionsView parts={reportDisplayParts} />}
           {tab === 'ritual' &&
-            (ritualContent ? (
-              <ReportBody content={ritualContent} />
+            (ritualDisplayParts.length > 0 ? (
+              <RitualSectionsView parts={ritualDisplayParts} />
+            ) : ritualContent ? (
+              <RitualSectionsView parts={[{ id: 'legacy', title: 'Fourfold Zen ritual', html: ritualContent }]} />
             ) : (
               <p className="py-8 text-muted-foreground">
                 Ready to begin your wellness journey?<br /><br />Reach out to us at{' '}

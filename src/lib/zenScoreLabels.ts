@@ -27,14 +27,14 @@ export function imbalanceTier(score: number, max: number): ImbalanceTier {
 }
 
 export function overallStatusLabel(score: number): string {
-  if (score <= 32) return 'No Imbalance'
+  if (score <= 32) return 'Low Imbalance'
   if (score <= 63) return 'Mild Imbalance'
   if (score <= 95) return 'Moderate Imbalance'
   return 'High Imbalance'
 }
 
 export function zoneStatusLabel(score: number): string {
-  if (score <= 11) return 'No Imbalance'
+  if (score <= 11) return 'Low Imbalance'
   if (score <= 21) return 'Mild Imbalance'
   if (score <= 31) return 'Moderate Imbalance'
   return 'High Imbalance'

@@ -3,7 +3,9 @@ import { Link, useParams } from 'react-router-dom'
 import { ChevronLeft, Download, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { PracticeDisclaimerDialog } from '@/components/PracticeDisclaimerDialog'
-import { ReportBody } from '@/components/ReportBody'
+import { ReportSectionsView } from '@/components/ReportSectionsView'
+import { RitualSectionsView } from '@/components/RitualSectionsView'
+import { resolveReportDisplayParts, resolveRitualDisplayParts } from '@/lib/resolveReportSections'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { useAuth } from '@/hooks/useAuth'
@@ -30,6 +32,18 @@ type ReportData = {
   finalNarrativeSection: string | null
   planSection: string | null
   content: string | null
+  report_client_info: string | null
+  report_key_concerns: string | null
+  report_current_state: string | null
+  report_balance_zone: string | null
+  report_blossom_zone: string | null
+  report_bliss_zone: string | null
+  report_integrated_interpretation: string | null
+  ritual_explain: string | null
+  ritual_somatic: string | null
+  ritual_mental: string | null
+  ritual_daily: string | null
+  ritual_reflect: string | null
   assessmentId: string | null
   createdAt: string | null
   assessment: { score_total?: number | null; score_data?: unknown } | null
@@ -47,6 +61,37 @@ type AnswerRow = {
   question_id: string
   answer_value: string | null
   skipped: boolean | null
+}
+
+function mapReportRow(
+  row: Record<string, unknown>,
+  assessment: ReportData['assessment'],
+  assessmentId: string | null,
+  createdAt: string | null
+): ReportData {
+  const str = (k: string) => (typeof row[k] === 'string' ? row[k] : null) as string | null
+  return {
+    reportSection: str('report_section'),
+    ritualSection: str('ritual_section'),
+    finalNarrativeSection: str('final_narrative_section'),
+    planSection: str('plan_section'),
+    content: str('content'),
+    report_client_info: str('report_client_info'),
+    report_key_concerns: str('report_key_concerns'),
+    report_current_state: str('report_current_state'),
+    report_balance_zone: str('report_balance_zone'),
+    report_blossom_zone: str('report_blossom_zone'),
+    report_bliss_zone: str('report_bliss_zone'),
+    report_integrated_interpretation: str('report_integrated_interpretation'),
+    ritual_explain: str('ritual_explain'),
+    ritual_somatic: str('ritual_somatic'),
+    ritual_mental: str('ritual_mental'),
+    ritual_daily: str('ritual_daily'),
+    ritual_reflect: str('ritual_reflect'),
+    assessmentId,
+    createdAt,
+    assessment,
+  }
 }
 
 export function TherapistClientReportDetailPage() {
@@ -83,7 +128,7 @@ export function TherapistClientReportDetailPage() {
       let { data, error } = await supabase
         .from('reports')
         .select(
-          'report_section, ritual_section, final_narrative_section, plan_section, content, assessment_id, client_id, created_at, assessments ( score_total, score_data )'
+          'report_section, ritual_section, final_narrative_section, plan_section, content, report_client_info, report_key_concerns, report_current_state, report_balance_zone, report_blossom_zone, report_bliss_zone, report_integrated_interpretation, ritual_explain, ritual_somatic, ritual_mental, ritual_daily, ritual_reflect, assessment_id, client_id, created_at, assessments ( score_total, score_data )'
         )
         .eq('id', reportId)
         .eq('client_id', clientId)
@@ -111,19 +156,17 @@ export function TherapistClientReportDetailPage() {
             console.error('[get_therapist_unlinked_self_report_preview]', previewErr)
           } else if (preview && typeof preview === 'object') {
             const j = preview as Record<string, unknown>
-            setReport({
-              reportSection: (j.report_section as string) || null,
-              ritualSection: (j.ritual_section as string) || null,
-              finalNarrativeSection: (j.final_narrative_section as string) || null,
-              planSection: (j.plan_section as string) || null,
-              content: (j.content as string) || null,
-              assessmentId: typeof j.assessment_id === 'string' ? j.assessment_id : null,
-              createdAt: typeof j.created_at === 'string' ? j.created_at : null,
-              assessment: {
-                score_total: typeof j.score_total === 'number' ? j.score_total : null,
-                score_data: j.score_data,
-              },
-            })
+            setReport(
+              mapReportRow(
+                j,
+                {
+                  score_total: typeof j.score_total === 'number' ? j.score_total : null,
+                  score_data: j.score_data,
+                },
+                typeof j.assessment_id === 'string' ? j.assessment_id : null,
+                typeof j.created_at === 'string' ? j.created_at : null
+              )
+            )
             setClientPrintProfile({
               name: (j.client_name as string) ?? null,
               first_name: (j.client_first_name as string) ?? null,
@@ -143,22 +186,20 @@ export function TherapistClientReportDetailPage() {
       const row = data as Record<string, unknown>
       const join = row.assessments as Record<string, unknown> | Record<string, unknown>[] | null | undefined
       const assessmentRow = Array.isArray(join) ? join[0] : join
-      setReport({
-        reportSection: (row.report_section as string) || null,
-        ritualSection: (row.ritual_section as string) || null,
-        finalNarrativeSection: (row.final_narrative_section as string) || null,
-        planSection: (row.plan_section as string) || null,
-        content: (row.content as string) || null,
-        assessmentId: typeof row.assessment_id === 'string' ? row.assessment_id : null,
-        createdAt: typeof row.created_at === 'string' ? row.created_at : null,
-        assessment: assessmentRow
-          ? {
-              score_total:
-                typeof assessmentRow.score_total === 'number' ? assessmentRow.score_total : null,
-              score_data: assessmentRow.score_data,
-            }
-          : null,
-      })
+      setReport(
+        mapReportRow(
+          row,
+          assessmentRow
+            ? {
+                score_total:
+                  typeof assessmentRow.score_total === 'number' ? assessmentRow.score_total : null,
+                score_data: assessmentRow.score_data,
+              }
+            : null,
+          typeof row.assessment_id === 'string' ? row.assessment_id : null,
+          typeof row.created_at === 'string' ? row.created_at : null
+        )
+      )
       const { data: cp } = await supabase
         .from('profiles')
         .select('name, first_name, last_name, gender, age')
@@ -255,6 +296,8 @@ export function TherapistClientReportDetailPage() {
   const ritualContent = report.ritualSection || ''
   const finalContent = report.finalNarrativeSection || ''
   const planSection = report.planSection || ''
+  const reportDisplayParts = resolveReportDisplayParts(report)
+  const ritualDisplayParts = resolveRitualDisplayParts(report)
 
   const handlePrintPdf = async () => {
     if (pdfLoading) return
@@ -348,24 +391,12 @@ export function TherapistClientReportDetailPage() {
         style={pageStaggerItemStyle(2, staggerVisible)}
       >
         <CardContent className="pt-6">
-          {tab === 'report' && (
-            <>
-              {reportContent ? (
-                <ReportBody content={reportContent} />
-              ) : (
-                <p className="py-8 text-center text-muted-foreground">No report content available.</p>
-              )}
-              {finalContent ? (
-                <div className="mt-10 border-t border-white/10 pt-8">
-                  <h2 className="mb-4 text-xl font-semibold text-foreground">Final narrative</h2>
-                  <ReportBody content={finalContent} />
-                </div>
-              ) : null}
-            </>
-          )}
+          {tab === 'report' && <ReportSectionsView parts={reportDisplayParts} />}
           {tab === 'ritual' &&
-            (ritualContent ? (
-              <ReportBody content={ritualContent} />
+            (ritualDisplayParts.length > 0 ? (
+              <RitualSectionsView parts={ritualDisplayParts} />
+            ) : ritualContent ? (
+              <RitualSectionsView parts={[{ id: 'legacy', title: 'Fourfold Zen ritual', html: ritualContent }]} />
             ) : (
               <p className="py-8 text-muted-foreground">
               No rituals or 18 week plan created.

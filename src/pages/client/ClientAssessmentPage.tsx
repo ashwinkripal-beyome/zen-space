@@ -1,13 +1,16 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Calendar, ClipboardCheck, Lock, ShieldCheck } from 'lucide-react'
+import { Calendar, ClipboardCheck, Lock, RefreshCw, ShieldCheck } from 'lucide-react'
+import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { BENCHMARK_TOTAL_QUESTIONS } from '@/data/benchmarkAssessment'
 import { useAuth } from '@/hooks/useAuth'
 import { useAssessmentAvailability } from '@/hooks/useAssessmentAvailability'
 import { pageStaggerItemStyle, usePageStaggerVisible } from '@/hooks/usePageStaggerVisible'
 import { useClientOnboarding } from '@/hooks/useClientOnboarding.tsx'
+import { messageFromFunctionInvokeFailure } from '@/lib/functionInvokeError'
 import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
 
@@ -42,6 +45,27 @@ export function ClientAssessmentPage() {
   const availability = useAssessmentAvailability()
   const name = displayFirstName(profile ?? null)
   const flagFlipped = useRef(false)
+  const [generatingReport, setGeneratingReport] = useState(false)
+
+  const handleRetryReport = async () => {
+    const assessmentId = availability.selfCompletedAssessmentId
+    if (!assessmentId) return
+    setGeneratingReport(true)
+    try {
+      const { error, response: fnResponse } = await supabase.functions.invoke('generate-zen-report-self', {
+        body: { assessment_id: assessmentId },
+      })
+      if (error || (fnResponse && fnResponse.status >= 300)) {
+        const msg = await messageFromFunctionInvokeFailure(error, fnResponse)
+        toast.error(msg || 'Failed to generate report. Please try again.')
+      } else {
+        toast.success('Your report is being generated. Check back in a moment.')
+        availability.refetch()
+      }
+    } finally {
+      setGeneratingReport(false)
+    }
+  }
 
   useEffect(() => {
     if (flagFlipped.current) return
@@ -79,6 +103,9 @@ export function ClientAssessmentPage() {
       }
       if (reason === 'already_completed') {
         return { status: 'locked', statusLabel: 'Already completed' }
+      }
+      if (reason === 'report_not_generated') {
+        return { status: 'cooldown', statusLabel: 'Report not generated' }
       }
       return { status: 'locked', statusLabel: 'Not available' }
     }
@@ -211,14 +238,38 @@ export function ClientAssessmentPage() {
                   <span className="text-foreground/20">·</span>
                   <span>{tile.duration}</span>
                 </div>
+                {tile.id === 'self' &&
+                  availability.self.selfUnavailableReason === 'report_not_generated' && (
+                    <div className="pt-1">
+                      <p className="mb-2 text-xs text-amber-300/80">
+                        Your assessment is complete but the report failed to generate.
+                      </p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={generatingReport}
+                        onClick={(e) => {
+                          e.preventDefault()
+                          void handleRetryReport()
+                        }}
+                        className="w-full border-amber-400/30 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20"
+                      >
+                        <RefreshCw className={cn('mr-2 size-3.5', generatingReport && 'animate-spin')} />
+                        {generatingReport ? 'Generating…' : 'Generate my report'}
+                      </Button>
+                    </div>
+                  )}
               </CardContent>
             </Card>
           )
 
           const baseStagger = pageStaggerItemStyle(tileStaggerBase + tileIndex, staggerVisible)
-          // Inline stagger opacity wins over Tailwind opacity-60; keep locked/cooldown tiles dimmer when visible.
+          // Keep locked/cooldown tiles dimmer, but not the report_not_generated tile — it needs user action.
+          const needsAction =
+            tile.id === 'self' &&
+            availability.self.selfUnavailableReason === 'report_not_generated'
           const staggerStyle =
-            staggerVisible && disabled ? { ...baseStagger, opacity: 0.6 } : baseStagger
+            staggerVisible && disabled && !needsAction ? { ...baseStagger, opacity: 0.6 } : baseStagger
 
           if (tile.to && !disabled) {
             return (

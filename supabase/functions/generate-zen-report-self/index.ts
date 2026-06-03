@@ -3,9 +3,11 @@ import {
   ZEN_MENTAL_REPROGRAM_SYSTEM_PROMPT,
   ZEN_REPORT_BODY_SYSTEM_PROMPT,
   buildMentalReprogramUserMessage,
+  buildReportDbFields,
   buildReportUserMessage,
   parseMentalReprogramContent,
   parseReportSections,
+  parseReportSubsections,
 } from '../_shared/zenReportPrompt.ts'
 
 const corsHeaders: Record<string, string> = {
@@ -229,6 +231,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const sections = parseReportSections(content)
+    const reportDb = buildReportDbFields(parseReportSubsections(content), content)
 
     // Second OpenAI call: generate Mental Reprogramming section + affirmations
     const mentalUserMessage = buildMentalReprogramUserMessage({
@@ -262,6 +265,7 @@ Deno.serve(async (req: Request) => {
 
     let ritualSection: string | null = null
     let affirmations: string[] | null = null
+    let ritual_mental: string | null = null
 
     if (openaiMentalRes.ok) {
       const openaiMentalJson = (await openaiMentalRes.json()) as {
@@ -271,6 +275,7 @@ Deno.serve(async (req: Request) => {
       if (mentalRaw) {
         const mentalSections = parseMentalReprogramContent(mentalRaw)
         ritualSection = mentalSections.ritualSection || null
+        ritual_mental = mentalSections.ritualDb.ritual_mental
         affirmations = mentalSections.affirmations.length > 0 ? mentalSections.affirmations : null
       }
     } else {
@@ -284,10 +289,22 @@ Deno.serve(async (req: Request) => {
       client_id: user.id,
       therapist_id: null,
       content,
-      report_section: sections.reportSection || null,
+      report_section: reportDb.reportSection || sections.reportSection || null,
       ritual_section: ritualSection,
       plan_section: null,
-      final_narrative_section: sections.finalNarrativeSection || null,
+      final_narrative_section: reportDb.finalNarrativeSection || sections.finalNarrativeSection || null,
+      report_client_info: reportDb.report_client_info,
+      report_key_concerns: reportDb.report_key_concerns,
+      report_current_state: reportDb.report_current_state,
+      report_balance_zone: reportDb.report_balance_zone,
+      report_blossom_zone: reportDb.report_blossom_zone,
+      report_bliss_zone: reportDb.report_bliss_zone,
+      report_integrated_interpretation: reportDb.report_integrated_interpretation,
+      ritual_explain: null,
+      ritual_somatic: null,
+      ritual_mental,
+      ritual_daily: null,
+      ritual_reflect: null,
       affirmations,
       imbalance_score: balanceScore,
       blossom_zone_emotional: blossomScore,

@@ -6,7 +6,7 @@ import {
   type SupervisedBlockedReason,
 } from '@/lib/supervisedAssessmentEligibility'
 
-export type SelfUnavailableReason = 'already_completed' | 'supervised_first'
+export type SelfUnavailableReason = 'already_completed' | 'supervised_first' | 'report_not_generated'
 
 interface ModeStatus {
   available: boolean
@@ -26,6 +26,8 @@ export interface AssessmentAvailability {
   isPaidForSupervised: boolean
   loading: boolean
   refetch: () => void
+  /** ID of the most recent completed self assessment — available even when locked; used for report retry. */
+  selfCompletedAssessmentId: string | null
 }
 
 export function useAssessmentAvailability(): AssessmentAvailability {
@@ -38,6 +40,7 @@ export function useAssessmentAvailability(): AssessmentAvailability {
   })
   const [isPaidForSupervised, setIsPaidForSupervised] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [selfCompletedAssessmentId, setSelfCompletedAssessmentId] = useState<string | null>(null)
 
   const fetch = useCallback(async () => {
     if (!user?.id) {
@@ -51,7 +54,7 @@ export function useAssessmentAvailability(): AssessmentAvailability {
       await Promise.all([
       supabase
         .from('assessments')
-        .select('completed_at')
+        .select('id, completed_at')
         .eq('client_id', user.id)
         .eq('assessment_mode', 'self')
         .eq('status', 'completed')
@@ -89,8 +92,21 @@ export function useAssessmentAvailability(): AssessmentAvailability {
     setIsPaidForSupervised(paid)
 
     const supervisedOverrideCreatedAt = overridesResult.data?.created_at ?? null
-    const selfCompletedAt = selfResult.data?.completed_at
+    const selfData = selfResult.data as { id?: string; completed_at?: string } | null
+    const selfCompletedAt = selfData?.completed_at
+    const selfAssessmentId = selfData?.id ?? null
+    setSelfCompletedAssessmentId(selfAssessmentId)
     const supervisedCompletedAt = supervisedResult.data?.completed_at
+
+    let selfHasReport = false
+    if (selfAssessmentId) {
+      const { data: reportCheck } = await supabase
+        .from('reports')
+        .select('id')
+        .eq('assessment_id', selfAssessmentId)
+        .maybeSingle()
+      selfHasReport = Boolean(reportCheck)
+    }
 
     let planCompletedDays: unknown = []
     const reportRow = latestReportResult.data as { id?: string; created_at?: string; plan_section?: string } | null
@@ -115,7 +131,7 @@ export function useAssessmentAvailability(): AssessmentAvailability {
       planCompletedDays,
     })
 
-    setSelfStatus(computeSelfStatus(selfCompletedAt, supervisedCompletedAt))
+    setSelfStatus(computeSelfStatus(selfCompletedAt, supervisedCompletedAt, selfHasReport))
     setSupervisedStatus({
       available: elig.available,
       nextDate: elig.nextDate,
@@ -135,20 +151,22 @@ export function useAssessmentAvailability(): AssessmentAvailability {
     isPaidForSupervised,
     loading,
     refetch: fetch,
+    selfCompletedAssessmentId,
   }
 }
 
 /** Self: once only; unavailable if any completed self or any completed supervised (supervised-first). No overrides. */
 function computeSelfStatus(
   selfCompletedAt: string | null | undefined,
-  supervisedCompletedAt: string | null | undefined
+  supervisedCompletedAt: string | null | undefined,
+  hasReport: boolean
 ): ModeStatus {
   if (selfCompletedAt) {
     return {
       available: false,
       nextDate: null,
       loading: false,
-      selfUnavailableReason: 'already_completed',
+      selfUnavailableReason: hasReport ? 'already_completed' : 'report_not_generated',
     }
   }
   if (supervisedCompletedAt) {

@@ -5,9 +5,13 @@ import {
   ZEN_REPORT_BODY_SYSTEM_PROMPT,
   assembleSupervisedReportContent,
   buildPlan18UserMessage,
+  buildReportDbFields,
+  buildRitualDbFields,
   buildReportUserMessage,
   buildRitualUserMessage,
   parseReportSections,
+  parseReportSubsections,
+  parseRitualSubsections,
 } from '../_shared/zenReportPrompt.ts'
 
 const corsHeaders: Record<string, string> = {
@@ -310,16 +314,30 @@ Deno.serve(async (req: Request) => {
 
     const content = assembleSupervisedReportContent(reportOnlyRaw, ritualOnlyRaw, planOnlyRaw)
     const sections = parseReportSections(content)
+    const reportDb = buildReportDbFields(parseReportSubsections(reportOnlyRaw), reportOnlyRaw)
+    const ritualDb = buildRitualDbFields(parseRitualSubsections(ritualOnlyRaw), ritualOnlyRaw)
 
     const row = {
       assessment_id: assessmentId,
       client_id: assessment.client_id,
       therapist_id: user.id,
       content,
-      report_section: sections.reportSection || null,
-      ritual_section: sections.ritualSection || null,
+      report_section: reportDb.reportSection || sections.reportSection || null,
+      ritual_section: ritualDb.ritualSection || sections.ritualSection || null,
       plan_section: sections.planSection || null,
-      final_narrative_section: sections.finalNarrativeSection || null,
+      final_narrative_section: reportDb.finalNarrativeSection || sections.finalNarrativeSection || null,
+      report_client_info: reportDb.report_client_info,
+      report_key_concerns: reportDb.report_key_concerns,
+      report_current_state: reportDb.report_current_state,
+      report_balance_zone: reportDb.report_balance_zone,
+      report_blossom_zone: reportDb.report_blossom_zone,
+      report_bliss_zone: reportDb.report_bliss_zone,
+      report_integrated_interpretation: reportDb.report_integrated_interpretation,
+      ritual_explain: ritualDb.ritual_explain,
+      ritual_somatic: ritualDb.ritual_somatic,
+      ritual_mental: ritualDb.ritual_mental,
+      ritual_daily: ritualDb.ritual_daily,
+      ritual_reflect: ritualDb.ritual_reflect,
       affirmations: sections.affirmations.length > 0 ? sections.affirmations : null,
       imbalance_score: balanceScore,
       blossom_zone_emotional: blossomScore,
