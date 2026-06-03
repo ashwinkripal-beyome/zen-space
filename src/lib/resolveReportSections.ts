@@ -19,7 +19,10 @@ export type ReportRowInput = {
   report_blossom_zone?: string | null
   report_bliss_zone?: string | null
   report_integrated_interpretation?: string | null
+  /** Snake-case form (raw DB row). */
   final_narrative_section?: string | null
+  /** Camel-case form (page state objects). */
+  finalNarrativeSection?: string | null
   report_section?: string | null
   content?: string | null
   ritual_explain?: string | null
@@ -42,15 +45,20 @@ const REPORT_PARTS: { id: string; title: string; column: keyof ReportRowInput }[
 
 const RITUAL_PARTS: { id: string; title: string; column: keyof ReportRowInput }[] = [
   { id: 'explain', title: 'Your daily foundation', column: 'ritual_explain' },
-  { id: 'somatic', title: 'Step 1 — Somatic release & grounding', column: 'ritual_somatic' },
-  { id: 'mental', title: 'Step 2 — Mental reprogramming', column: 'ritual_mental' },
-  { id: 'daily', title: 'Step 3 — Daily Zen Garden practice', column: 'ritual_daily' },
-  { id: 'reflect', title: 'Step 4 — Reflection & integration', column: 'ritual_reflect' },
+  { id: 'somatic', title: 'Somatic release & grounding', column: 'ritual_somatic' },
+  { id: 'mental', title: 'Your Mental reprogramming Statements', column: 'ritual_mental' },
+  { id: 'daily', title: 'Daily Zen Garden practice', column: 'ritual_daily' },
+  { id: 'reflect', title: 'Reflection & integration', column: 'ritual_reflect' },
 ]
 
 function pick(row: ReportRowInput, col: keyof ReportRowInput): string {
   const v = row[col]
   return typeof v === 'string' ? v.trim() : ''
+}
+
+/** Reads the final-narrative field regardless of which casing the caller used. */
+function pickFinalNarrative(row: ReportRowInput): string {
+  return (row.final_narrative_section || row.finalNarrativeSection || '').trim()
 }
 
 function hasAnyReportColumns(row: ReportRowInput): boolean {
@@ -65,7 +73,7 @@ function fromHtmlSplit(row: ReportRowInput): { report: Record<string, string>; f
   const reportHtml = (row.report_section || row.content || '').trim()
   const split = splitWellnessReportHtml(reportHtml)
   const final =
-    (row.final_narrative_section || '').trim() ||
+    pickFinalNarrative(row) ||
     parseReportDelimitersFromContent(row.content || '').finalNarrative ||
     ''
 
@@ -95,7 +103,7 @@ function fromContentDelimiters(row: ReportRowInput): { report: Record<string, st
       blissZone: parsed.blissZone || '',
       integrated: parsed.integrated || '',
     },
-    final: (row.final_narrative_section || '').trim() || parsed.finalNarrative || '',
+    final: pickFinalNarrative(row) || parsed.finalNarrative || '',
   }
 }
 
@@ -107,7 +115,7 @@ export function resolveReportDisplayParts(row: ReportRowInput): ReportDisplayPar
     for (const p of REPORT_PARTS) {
       htmlById[p.id] = pick(row, p.column)
     }
-    const final = (row.final_narrative_section || '').trim()
+    const final = pickFinalNarrative(row)
     const parts: ReportDisplayPart[] = REPORT_PARTS.filter(p => htmlById[p.id]).map(p => ({
       id: p.id,
       title: p.title,
