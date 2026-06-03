@@ -125,6 +125,9 @@ export function PlanChecklist({
           {phase.title ? (
             <h2 className="text-xl font-semibold tracking-tight text-foreground">{phase.title}</h2>
           ) : null}
+          {phase.introHtml?.trim() ? (
+            <ReportHtml content={phase.introHtml} className="text-sm text-muted-foreground" />
+          ) : null}
           {phase.days.length === 0 ? null : (
             <div className="relative">
               <div

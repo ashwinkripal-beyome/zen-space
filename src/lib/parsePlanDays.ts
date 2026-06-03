@@ -252,6 +252,8 @@ export type PlanDayBlock = {
 export type PlanPhaseBlock = {
   /** Phase title from <h2> (e.g. Weeks 1–6). */
   title: string
+  /** Zone intro after phase <h2>, before the first week <h3> (usually one <p>). */
+  introHtml?: string
   days: PlanDayBlock[]
 }
 
@@ -273,6 +275,16 @@ export function parsePlanPhases(html: string): PlanPhaseBlock[] {
   let currentPhase: PlanPhaseBlock = { title: '', days: [] }
   let currentDay: number | null = null
   let currentNodes: Element[] = []
+  let phaseIntroNodes: Element[] = []
+
+  const flushPhaseIntro = () => {
+    if (phaseIntroNodes.length === 0) return
+    const wrap = doc.createElement('div')
+    phaseIntroNodes.forEach(n => wrap.appendChild(n.cloneNode(true)))
+    const introHtml = wrap.innerHTML.trim()
+    if (introHtml) currentPhase.introHtml = introHtml
+    phaseIntroNodes = []
+  }
 
   const flushDay = () => {
     if (currentDay === null) return
@@ -293,9 +305,11 @@ export function parsePlanPhases(html: string): PlanPhaseBlock[] {
 
   const commitPhase = () => {
     flushDay()
+    flushPhaseIntro()
     if (currentPhase.days.length > 0 || currentPhase.title.trim() !== '') {
       phases.push({
         title: currentPhase.title.trim(),
+        introHtml: currentPhase.introHtml,
         days: currentPhase.days,
       })
     }
@@ -314,6 +328,7 @@ export function parsePlanPhases(html: string): PlanPhaseBlock[] {
     if (node.tagName === 'H3') {
       const m = (node.textContent?.trim() ?? '').match(DAY_OR_WEEK_H3)
       if (m) {
+        flushPhaseIntro()
         flushDay()
         currentDay = Number.parseInt(m[1], 10)
         if (!Number.isFinite(currentDay) || currentDay < 1) {
@@ -324,6 +339,8 @@ export function parsePlanPhases(html: string): PlanPhaseBlock[] {
     }
     if (currentDay !== null) {
       currentNodes.push(node as Element)
+    } else {
+      phaseIntroNodes.push(node as Element)
     }
   }
   commitPhase()

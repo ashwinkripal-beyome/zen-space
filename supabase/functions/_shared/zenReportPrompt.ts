@@ -299,8 +299,9 @@ Then on following lines, output the plan as HTML only (for app timeline).
 PLAN SECTION (HTML only, for app timeline)
 - Do NOT output a visible heading or line that says "18-WEEK PERSONALIZED PLAN" (omit it entirely).
 - Start the PLAN section with the first phase heading as an h2, for example: <h2>Phase 1: Balance (Weeks 1–6)</h2>
+- Immediately after each phase <h2>, output one <p> with that phase's zone intro from STRUCTURE (e.g. Balance: "Pause, breathe, and return to your center…") before any <h3> week heading.
 - Then for each week use: <h3>Week 1</h3>, then in order: (1) one summary paragraph listing that week's activity names, e.g. <p><strong>Activities</strong>: Name A, Name B and Name C</p> (names only in this line); (2) for each activity, its title in <strong> and a short explanation in following <p> elements or with <br> as needed—match the STRUCTURE section above; write every explanation to the client as "you/your" (see VOICE rule), never third person.
-- Repeat for Phase 2 and Phase 3 with h2 phase titles, then h3 for each week.
+- Repeat for Phase 2 and Phase 3: h2 phase title, zone intro <p>, then h3 for each week in that phase.
 - Allowed tags only: h2, h3, p, ul, ol, li, strong, em, br.
 
 FINAL INSTRUCTION
