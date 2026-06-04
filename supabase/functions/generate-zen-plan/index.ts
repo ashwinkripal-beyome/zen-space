@@ -3,7 +3,9 @@ import {
   ZEN_FOURFOLD_RITUAL_SYSTEM_PROMPT,
   ZEN_PLAN_18_SYSTEM_PROMPT,
   ZEN_REMAINING_RITUAL_SYSTEM_PROMPT,
+  assembleFullReportContent,
   assemblePlanWithExistingMental,
+  assembleRitualFromParts,
   assembleSupervisedReportContent,
   buildPlan18UserMessage,
   buildReportAndFinalDelimitedContent,
@@ -11,10 +13,16 @@ import {
   buildRitualDbFields,
   buildRemainingRitualUserMessage,
   buildRitualUserMessage,
+  hasReportSubsectionDelimiters,
+  parsePlanSectionOnly,
   parseReportSections,
   parseReportSubsections,
+  parseRitualSectionOnly,
   parseRitualSubsections,
+  parseRemainingRitualSections,
   parseRemainingRitualSubsections,
+  resolveLegacyReportBodyAndFinal,
+  shouldUseLegacyPlanGenerationPath,
 } from '../_shared/zenReportPrompt.ts'
 
 const corsHeaders: Record<string, string> = {
@@ -96,8 +104,14 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    const body = (await req.json()) as { assessment_id?: string }
+    const body = (await req.json()) as {
+      assessment_id?: string
+      force?: boolean
+      scrap_and_regenerate?: boolean
+    }
     const assessmentId = body.assessment_id
+    const forceRegenerate = body.force === true
+    const scrapAndRegenerate = body.scrap_and_regenerate === true
     if (!assessmentId || typeof assessmentId !== 'string') {
       return new Response(JSON.stringify({ error: 'assessment_id required' }), {
         status: 400,
@@ -146,7 +160,7 @@ Deno.serve(async (req: Request) => {
     const { data: reportRow, error: rErr } = await admin
       .from('reports')
       .select(
-        'id, content, report_section, ritual_section, final_narrative_section, plan_section, assessment_id'
+        'id, content, report_section, ritual_section, final_narrative_section, plan_section, assessment_id, report_client_info, report_key_concerns, report_current_state, report_balance_zone, report_blossom_zone, report_bliss_zone, report_integrated_interpretation, ritual_explain, ritual_somatic, ritual_mental, ritual_daily, ritual_reflect, affirmations'
       )
       .eq('assessment_id', assessmentId)
       .maybeSingle()
@@ -159,11 +173,37 @@ Deno.serve(async (req: Request) => {
     }
 
     const existingPlan = (reportRow.plan_section as string) || ''
-    if (existingPlan.trim().length > 0) {
+    const planLooksComplete = existingPlan.trim().length > 200
+    if (planLooksComplete && !forceRegenerate && !scrapAndRegenerate) {
       return new Response(JSON.stringify({ error: 'This report already has an 18-week plan' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
+    }
+
+    if (scrapAndRegenerate) {
+      const { error: clearErr } = await admin
+        .from('reports')
+        .update({
+          plan_section: null,
+          ritual_section: null,
+          ritual_explain: null,
+          ritual_somatic: null,
+          ritual_mental: null,
+          ritual_daily: null,
+          ritual_reflect: null,
+        })
+        .eq('id', reportRow.id as string)
+      if (clearErr) {
+        console.error('reports clear plan/ritual', clearErr)
+        return new Response(JSON.stringify({ error: clearErr.message }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+      reportRow.plan_section = null
+      reportRow.ritual_section = null
+      reportRow.ritual_mental = null
     }
 
     const { data: profile } = await admin
@@ -211,9 +251,14 @@ Deno.serve(async (req: Request) => {
       .filter(Boolean)
 
     const isSelfAssessment = assessment.assessment_mode === 'self'
-    const existingMentalHtml = ((reportRow.ritual_section as string) || '').trim()
+    const existingMentalHtml = scrapAndRegenerate
+      ? ''
+      : (
+          ((reportRow.ritual_mental as string) || '').trim() ||
+          ((reportRow.ritual_section as string) || '').trim()
+        )
     // Use remaining-ritual prompt when a self-report already has mental reprogramming stored
-    const hasExistingMental = isSelfAssessment && existingMentalHtml.length > 0
+    const hasExistingMental = isSelfAssessment && existingMentalHtml.length > 0 && !scrapAndRegenerate
     const isSupervised = assessment.assessment_mode === 'supervised'
 
     const reportParams = {
@@ -239,30 +284,72 @@ Deno.serve(async (req: Request) => {
     const rs = (reportRow.report_section as string) || ''
     const fin = (reportRow.final_narrative_section as string) || ''
 
-    let toParse: string
-    if (contentStr.trim() && (contentStr.includes('---SECTION:REPORT---') || contentStr.includes('---SECTION:FINAL---'))) {
-      toParse = contentStr
-    } else if (rs.trim() && fin.trim()) {
-      toParse = buildReportAndFinalDelimitedContent({ report: rs, final: fin })
-    } else {
+    const reportRowRecord = reportRow as Record<string, unknown>
+    const { reportHtml: legacyReportHtml, finalHtml: legacyFinalHtml } = resolveLegacyReportBodyAndFinal({
+      reportSection: rs,
+      finalNarrativeSection: fin,
+      content: contentStr,
+    })
+
+    // scrapAndRegenerate: always use report_section + final_narrative_section as the report body.
+    // This skips the legacy/new-format detection entirely and is guaranteed to work whenever those
+    // two columns are populated (which they always are for paid self-assessment reports).
+    if (scrapAndRegenerate && !legacyReportHtml.trim()) {
+      return new Response(
+        JSON.stringify({ error: 'Report body missing; cannot regenerate plan. Try regenerating the full report first.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    let isLegacyReport =
+      !scrapAndRegenerate &&
+      shouldUseLegacyPlanGenerationPath({
+        content: contentStr,
+        reportSection: rs,
+        reportRow: reportRowRecord,
+      })
+
+    // For new-format reports we keep the delimited content intact so subsection columns can be repopulated.
+    let toParse = ''
+
+    if (scrapAndRegenerate) {
+      // Always reconstruct from aggregate columns so old content blobs don't pollute the new run.
+      toParse = buildReportAndFinalDelimitedContent({
+        report: legacyReportHtml,
+        final: legacyFinalHtml,
+      })
+      isLegacyReport = false
+    } else if (!isLegacyReport) {
+      if (contentStr.trim() && (contentStr.includes('---SECTION:REPORT---') || contentStr.includes('---SECTION:FINAL---'))) {
+        toParse = contentStr
+      } else if (rs.trim() && fin.trim()) {
+        toParse = buildReportAndFinalDelimitedContent({ report: rs, final: fin })
+      } else if (
+        contentStr.trim() &&
+        (hasReportSubsectionDelimiters(contentStr) || contentStr.includes('---SECTION:FINAL---'))
+      ) {
+        toParse = contentStr
+      }
+
+      const parsed = parseReportSections(toParse)
+      if (!parsed.reportSection.trim() || !parsed.finalNarrativeSection.trim()) {
+        if (legacyReportHtml.trim()) {
+          isLegacyReport = true
+        } else {
+          return new Response(
+            JSON.stringify({ error: 'Report sections incomplete; regenerate the Zen Plan report first.' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+      }
+    }
+
+    if (isLegacyReport && !legacyReportHtml.trim()) {
       return new Response(
         JSON.stringify({ error: 'Report content is missing; cannot attach a plan. Regenerate the report first.' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
-
-    const parsed = parseReportSections(toParse)
-    if (!parsed.reportSection.trim() || !parsed.finalNarrativeSection.trim()) {
-      return new Response(JSON.stringify({ error: 'Report sections incomplete; regenerate the Zen Plan report first.' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    // Keep toParse intact — it may contain sub-section delimiters (new format).
-    // Building a normalizedReportAndFinal from parsed.reportSection would strip those,
-    // causing assemblePlanWithExistingMental to produce un-parseable content and
-    // plan_section / report_*  columns to end up null.
 
     const model = Deno.env.get('OPENAI_MODEL') || 'gpt-4o-mini'
 
@@ -349,39 +436,72 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    const fullContent = hasExistingMental
-      ? assemblePlanWithExistingMental(toParse, existingMentalHtml, ritualOnlyRaw, planOnlyRaw)
-      : assembleSupervisedReportContent(toParse, ritualOnlyRaw, planOnlyRaw)
-    const sections = parseReportSections(fullContent)
-    const reportDb = buildReportDbFields(parseReportSubsections(toParse), toParse)
-    const ritualParsed = hasExistingMental
-      ? {
-          ...parseRemainingRitualSubsections(ritualOnlyRaw),
-          mental: existingMentalHtml.trim(),
-          usedNewFormat: true,
-        }
-      : parseRitualSubsections(ritualOnlyRaw)
-    const ritualDb = buildRitualDbFields(ritualParsed, ritualOnlyRaw)
+    let row: Record<string, unknown>
 
-    const row = {
-      content: fullContent,
-      report_section: reportDb.reportSection || sections.reportSection || null,
-      ritual_section: ritualDb.ritualSection || sections.ritualSection || null,
-      plan_section: sections.planSection || null,
-      final_narrative_section: reportDb.finalNarrativeSection || sections.finalNarrativeSection || null,
-      report_client_info: reportDb.report_client_info,
-      report_key_concerns: reportDb.report_key_concerns,
-      report_current_state: reportDb.report_current_state,
-      report_balance_zone: reportDb.report_balance_zone,
-      report_blossom_zone: reportDb.report_blossom_zone,
-      report_bliss_zone: reportDb.report_bliss_zone,
-      report_integrated_interpretation: reportDb.report_integrated_interpretation,
-      ritual_explain: ritualDb.ritual_explain,
-      ritual_somatic: ritualDb.ritual_somatic,
-      ritual_mental: ritualDb.ritual_mental || (existingMentalHtml.trim() ? existingMentalHtml.trim() : null),
-      ritual_daily: ritualDb.ritual_daily,
-      ritual_reflect: ritualDb.ritual_reflect,
-      affirmations: sections.affirmations.length > 0 ? sections.affirmations : null,
+    if (!isLegacyReport) {
+      const fullContent = hasExistingMental
+        ? assemblePlanWithExistingMental(toParse, existingMentalHtml, ritualOnlyRaw, planOnlyRaw)
+        : assembleSupervisedReportContent(toParse, ritualOnlyRaw, planOnlyRaw)
+      const sections = parseReportSections(fullContent)
+      const reportDb = buildReportDbFields(parseReportSubsections(toParse), toParse)
+      const ritualParsed = hasExistingMental
+        ? {
+            ...parseRemainingRitualSubsections(ritualOnlyRaw),
+            mental: existingMentalHtml.trim(),
+            usedNewFormat: true,
+          }
+        : parseRitualSubsections(ritualOnlyRaw)
+      const ritualDb = buildRitualDbFields(ritualParsed, ritualOnlyRaw)
+
+      row = {
+        content: fullContent,
+        report_section: reportDb.reportSection || sections.reportSection || null,
+        ritual_section: ritualDb.ritualSection || sections.ritualSection || null,
+        plan_section: sections.planSection || null,
+        final_narrative_section: reportDb.finalNarrativeSection || sections.finalNarrativeSection || null,
+        report_client_info: reportDb.report_client_info,
+        report_key_concerns: reportDb.report_key_concerns,
+        report_current_state: reportDb.report_current_state,
+        report_balance_zone: reportDb.report_balance_zone,
+        report_blossom_zone: reportDb.report_blossom_zone,
+        report_bliss_zone: reportDb.report_bliss_zone,
+        report_integrated_interpretation: reportDb.report_integrated_interpretation,
+        ritual_explain: ritualDb.ritual_explain,
+        ritual_somatic: ritualDb.ritual_somatic,
+        ritual_mental: ritualDb.ritual_mental || (existingMentalHtml.trim() ? existingMentalHtml.trim() : null),
+        ritual_daily: ritualDb.ritual_daily,
+        ritual_reflect: ritualDb.ritual_reflect,
+        affirmations: sections.affirmations.length > 0 ? sections.affirmations : null,
+      }
+    } else {
+      // Legacy report: store the old way and keep ALL subsection columns null so the frontend
+      // falls back to splitting report_section / ritual_section HTML (display unchanged).
+      const planSection = parsePlanSectionOnly(planOnlyRaw)
+      const ritualSectionLegacy = hasExistingMental
+        ? (() => {
+            const remaining = parseRemainingRitualSections(ritualOnlyRaw)
+            return assembleRitualFromParts(remaining.before, existingMentalHtml, remaining.after)
+          })()
+        : parseRitualSectionOnly(ritualOnlyRaw)
+      const legacyContent = assembleFullReportContent({
+        report: legacyReportHtml,
+        ritual: ritualSectionLegacy,
+        plan: planSection,
+        final: legacyFinalHtml,
+      })
+      const legacySections = parseReportSections(legacyContent)
+
+      row = {
+        content: legacyContent,
+        report_section: legacyReportHtml || null,
+        ritual_section: ritualSectionLegacy || reportRow.ritual_section || null,
+        plan_section: planSection || legacySections.planSection || null,
+        final_narrative_section: legacyFinalHtml || reportRow.final_narrative_section || null,
+        affirmations:
+          legacySections.affirmations.length > 0
+            ? legacySections.affirmations
+            : (reportRow.affirmations as string[] | null) ?? null,
+      }
     }
 
     const { error: upErr } = await admin

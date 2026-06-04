@@ -4,6 +4,7 @@ import {
   splitRitualReportHtml,
   splitWellnessReportHtml,
 } from '@/lib/reportHtmlSections'
+import { stripSectionDelimiterMarkers } from '@/lib/sectionDelimiterMarkers'
 
 export type ReportDisplayPart = {
   id: string
@@ -53,12 +54,12 @@ const RITUAL_PARTS: { id: string; title: string; column: keyof ReportRowInput }[
 
 function pick(row: ReportRowInput, col: keyof ReportRowInput): string {
   const v = row[col]
-  return typeof v === 'string' ? v.trim() : ''
+  return typeof v === 'string' ? stripSectionDelimiterMarkers(v) : ''
 }
 
 /** Reads the final-narrative field regardless of which casing the caller used. */
 function pickFinalNarrative(row: ReportRowInput): string {
-  return (row.final_narrative_section || row.finalNarrativeSection || '').trim()
+  return stripSectionDelimiterMarkers(row.final_narrative_section || row.finalNarrativeSection || '')
 }
 
 function hasAnyReportColumns(row: ReportRowInput): boolean {

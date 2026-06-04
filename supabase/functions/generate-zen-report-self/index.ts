@@ -89,8 +89,9 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    const body = (await req.json()) as { assessment_id?: string }
+    const body = (await req.json()) as { assessment_id?: string; force?: boolean }
     const assessmentId = body.assessment_id
+    const forceRegenerate = body.force === true
     if (!assessmentId || typeof assessmentId !== 'string') {
       return new Response(JSON.stringify({ error: 'assessment_id required' }), {
         status: 400,
@@ -113,8 +114,19 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    if (assessment.client_id !== user.id) {
-      return new Response(JSON.stringify({ error: 'You do not own this assessment' }), {
+    const isClientOwner = assessment.client_id === user.id
+    let isAssignedTherapist = false
+    if (!isClientOwner) {
+      const { data: link } = await admin
+        .from('therapist_clients')
+        .select('therapist_id')
+        .eq('client_id', assessment.client_id)
+        .eq('therapist_id', user.id)
+        .maybeSingle()
+      isAssignedTherapist = Boolean(link)
+    }
+    if (!isClientOwner && !isAssignedTherapist) {
+      return new Response(JSON.stringify({ error: 'Not allowed to regenerate this report' }), {
         status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
@@ -134,11 +146,29 @@ Deno.serve(async (req: Request) => {
       })
     }
 
+    const profileClientId = assessment.client_id as string
     const { data: profile } = await admin
       .from('profiles')
       .select('first_name, name, email, age, dob, gender, occupation')
-      .eq('id', user.id)
+      .eq('id', profileClientId)
       .maybeSingle()
+
+    if (!forceRegenerate) {
+      const { data: existingReport } = await admin
+        .from('reports')
+        .select('id, report_section, content')
+        .eq('assessment_id', assessmentId)
+        .maybeSingle()
+      const hasBody =
+        ((existingReport?.report_section as string) || '').trim().length > 0 ||
+        ((existingReport?.content as string) || '').trim().length > 0
+      if (existingReport && hasBody) {
+        return new Response(JSON.stringify({ error: 'Report already exists; use force to regenerate' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+    }
 
     const displayName =
       (profile?.first_name as string)?.trim() ||
@@ -288,7 +318,7 @@ Deno.serve(async (req: Request) => {
 
     const row = {
       assessment_id: assessmentId,
-      client_id: user.id,
+      client_id: profileClientId,
       therapist_id: null,
       content,
       report_section: reportDb.reportSection || sections.reportSection || null,

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { Link, useParams } from 'react-router-dom'
 import { CalendarDays, Loader2, Mail, Phone, RefreshCw, StickyNote, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -22,7 +23,12 @@ import {
   type ProfileNameFields,
 } from '@/lib/clientDisplayName'
 import { CLIENT_STATUS_META, computeClientStatus, type ClientStatusLabel } from '@/lib/clientStatus'
+import {
+  ReportGenerationWaitOverlay,
+  type ReportGenerationWaitVariant,
+} from '@/components/ReportGenerationWaitOverlay'
 import { messageFromFunctionInvokeFailure } from '@/lib/functionInvokeError'
+import { assessZenGenerationHealth, type ZenGenerationHealth } from '@/lib/reportGenerationHealth'
 import { supabase } from '@/lib/supabase'
 import {
   computeSupervisedAssessmentEligibility,
@@ -33,6 +39,7 @@ import { cn } from '@/lib/utils'
 
 const glassReport = cn('zen-glass-card ring-0 shadow-none', 'zen-ring-primary')
 const glassPlan = cn('zen-glass-card ring-0 shadow-none', 'zen-ring-secondary')
+const glassRegen = cn('zen-glass-card ring-0 shadow-none', 'zen-ring-primary')
 const glassControls = cn('zen-glass-card ring-0 shadow-none', 'zen-ring-secondary')
 const glassNotes = cn('zen-glass-card ring-0 shadow-none', 'zen-ring-primary')
 const glassProfile = cn('zen-glass-card ring-0 shadow-none', 'zen-ring-primary')
@@ -342,17 +349,22 @@ export function TherapistClientDetailPage() {
 
   /** Latest completed self assessment id when its report has no 18-week plan yet. */
   const [selfAssessmentNeedingPlan, setSelfAssessmentNeedingPlan] = useState<string | null>(null)
+  const [zenGenerationHealth, setZenGenerationHealth] = useState<ZenGenerationHealth | null>(null)
+  const [generationWait, setGenerationWait] = useState<ReportGenerationWaitVariant | null>(null)
+  const [selfAssessmentId, setSelfAssessmentId] = useState<string | null>(null)
+  const [scrapConfirmOpen, setScrapConfirmOpen] = useState(false)
   const [latestReportLoaded, setLatestReportLoaded] = useState(false)
   const [hasLatestReport, setHasLatestReport] = useState(false)
 
-  const loadPlanCta = useCallback(async () => {
+  const loadZenGenerationHealth = useCallback(async () => {
     if (!clientId) {
       setSelfAssessmentNeedingPlan(null)
+      setZenGenerationHealth(null)
       return
     }
     const { data: selfA, error: selfErr } = await supabase
       .from('assessments')
-      .select('id')
+      .select('id, assessment_mode')
       .eq('client_id', clientId)
       .eq('assessment_mode', 'self')
       .eq('status', 'completed')
@@ -363,29 +375,135 @@ export function TherapistClientDetailPage() {
     if (selfErr) {
       console.error('[assessments self for plan cta]', selfErr)
       setSelfAssessmentNeedingPlan(null)
+      setZenGenerationHealth(null)
+      setSelfAssessmentId(null)
       return
     }
     if (!selfA?.id) {
       setSelfAssessmentNeedingPlan(null)
+      setZenGenerationHealth(null)
+      setSelfAssessmentId(null)
       return
     }
+    setSelfAssessmentId(selfA.id)
+
     const { data: rep, error: repErr } = await supabase
       .from('reports')
-      .select('plan_section')
+      .select(
+        'id, plan_section, report_section, content, final_narrative_section, report_client_info, report_key_concerns, report_current_state, report_balance_zone, report_blossom_zone, report_bliss_zone, report_integrated_interpretation'
+      )
       .eq('assessment_id', selfA.id)
       .maybeSingle()
+
     if (repErr) {
       console.error('[reports plan cta]', repErr)
       setSelfAssessmentNeedingPlan(null)
+      setZenGenerationHealth(null)
       return
     }
     if (!rep) {
       setSelfAssessmentNeedingPlan(null)
+      setZenGenerationHealth(null)
       return
     }
+
+    const health = assessZenGenerationHealth({
+      assessmentId: selfA.id,
+      assessmentMode: 'self',
+      report: rep
+        ? {
+            id: rep.id as string,
+            plan_section: (rep.plan_section as string) || null,
+            report_section: (rep.report_section as string) || null,
+            content: (rep.content as string) || null,
+            final_narrative_section: (rep.final_narrative_section as string) || null,
+            report_client_info: (rep.report_client_info as string) || null,
+            report_key_concerns: (rep.report_key_concerns as string) || null,
+            report_current_state: (rep.report_current_state as string) || null,
+            report_balance_zone: (rep.report_balance_zone as string) || null,
+            report_blossom_zone: (rep.report_blossom_zone as string) || null,
+            report_bliss_zone: (rep.report_bliss_zone as string) || null,
+            report_integrated_interpretation: (rep.report_integrated_interpretation as string) || null,
+          }
+        : null,
+      expectPlanForSelfReport: profile?.is_paid_customer === true,
+    })
+
+    setZenGenerationHealth(health)
+    setSelfAssessmentNeedingPlan(health.needsPlanRegeneration ? selfA.id : null)
+  }, [clientId, profile?.is_paid_customer])
+
+  const invokeZenFunction = async (
+    name: 'generate-zen-plan' | 'generate-zen-report-self',
+    assessmentId: string,
+    options?: { force?: boolean; scrapAndRegenerate?: boolean }
+  ): Promise<{ ok: boolean; message?: string }> => {
+    const { data, error, response: fnResponse } = await supabase.functions.invoke(name, {
+      body: {
+        assessment_id: assessmentId,
+        force: options?.force === true,
+        scrap_and_regenerate: options?.scrapAndRegenerate === true,
+      },
+    })
+    if (error) {
+      const msg = await messageFromFunctionInvokeFailure(error, fnResponse)
+      return { ok: false, message: msg }
+    }
+    if (data && typeof data === 'object' && 'error' in data && (data as { error?: string }).error) {
+      return { ok: false, message: (data as { error?: string }).error ?? 'Unknown error' }
+    }
+    return { ok: true }
+  }
+
+  const fetchSelfAssessmentIdNeedingPlan = async (): Promise<string | null> => {
+    if (!clientId) return null
+    const { data: selfA } = await supabase
+      .from('assessments')
+      .select('id')
+      .eq('client_id', clientId)
+      .eq('assessment_mode', 'self')
+      .eq('status', 'completed')
+      .order('completed_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (!selfA?.id) return null
+    const { data: rep } = await supabase
+      .from('reports')
+      .select('plan_section')
+      .eq('assessment_id', selfA.id)
+      .maybeSingle()
+    if (!rep) return null
     const ps = (rep.plan_section as string) || ''
-    setSelfAssessmentNeedingPlan(ps.trim().length === 0 ? selfA.id : null)
-  }, [clientId])
+    return ps.trim().length === 0 ? selfA.id : null
+  }
+
+  const handleScrapAndRegeneratePlan = async () => {
+    if (!selfAssessmentId) return
+    setScrapConfirmOpen(false)
+    flushSync(() => setGenerationWait('plan'))
+    try {
+      const planResult = await invokeZenFunction('generate-zen-plan', selfAssessmentId, {
+        force: true,
+        scrapAndRegenerate: true,
+      })
+      if (!planResult.ok) {
+        toast.error(`Regeneration failed: ${planResult.message ?? ''}`)
+        return
+      }
+      toast.success('18-week plan and Fourfold ritual regenerated')
+      setSelfAssessmentNeedingPlan(null)
+      void loadZenGenerationHealth()
+      void loadOverrides()
+    } catch (err) {
+      console.error('[scrap regenerate plan]', err)
+      toast.error('Regeneration failed unexpectedly')
+    } finally {
+      setGenerationWait(null)
+    }
+  }
+
+  const showScrapRegenerateCard =
+    profile?.is_paid_customer === true && Boolean(selfAssessmentId) && hasLatestReport
 
   const loadOverrides = useCallback(async () => {
     if (!user?.id || !clientId) return
@@ -463,8 +581,8 @@ export function TherapistClientDetailPage() {
   }, [profile, loadOverrides])
 
   useEffect(() => {
-    if (profile) void loadPlanCta()
-  }, [profile, loadPlanCta])
+    if (profile) void loadZenGenerationHealth()
+  }, [profile, loadZenGenerationHealth])
 
   const handleEnableSupervisedAssessment = async () => {
     if (!user?.id || !clientId) return
@@ -506,58 +624,33 @@ export function TherapistClientDetailPage() {
         contacted: 'Client marked as contacted',
         dropped: 'Client marked as dropped',
       }
-      toast.success(labels[newStatus] ?? 'Status updated')
-      void loadOverrides()
 
-      // When marking as paid: auto-generate the 18-week plan if a self-assessment report
-      // exists but has no plan yet.
       if (newStatus === 'pro') {
-        void (async () => {
+        const assessmentIdForPlan = await fetchSelfAssessmentIdNeedingPlan()
+        if (assessmentIdForPlan) {
+          flushSync(() => setGenerationWait('plan'))
           try {
-            const { data: selfA } = await supabase
-              .from('assessments')
-              .select('id')
-              .eq('client_id', clientId)
-              .eq('assessment_mode', 'self')
-              .eq('status', 'completed')
-              .order('completed_at', { ascending: false })
-              .limit(1)
-              .maybeSingle()
-
-            if (!selfA?.id) return
-
-            const { data: rep } = await supabase
-              .from('reports')
-              .select('plan_section')
-              .eq('assessment_id', selfA.id)
-              .maybeSingle()
-
-            // Only proceed if report exists but plan is missing
-            if (!rep || ((rep.plan_section as string) ?? '').trim().length > 0) return
-
-            const { data, error: planError, response: planFnResponse } = await supabase.functions.invoke(
-              'generate-zen-plan',
-              { body: { assessment_id: selfA.id } }
-            )
-            if (planError) {
-              const msg = await messageFromFunctionInvokeFailure(planError, planFnResponse)
-              toast.error(`Auto plan generation failed: ${msg}`)
-              return
+            const planResult = await invokeZenFunction('generate-zen-plan', assessmentIdForPlan, {
+              force: false,
+            })
+            if (!planResult.ok) {
+              toast.error(`Auto plan generation failed: ${planResult.message ?? ''}`)
+            } else {
+              toast.success('18-week plan generated automatically')
+              setSelfAssessmentNeedingPlan(null)
+              void loadZenGenerationHealth()
             }
-            if (data && typeof data === 'object' && 'error' in data && (data as { error?: string }).error) {
-              toast.error(
-                `Auto plan generation failed: ${(data as { error?: string }).error ?? 'Unknown error'}`
-              )
-              return
-            }
-            toast.success('18-week plan generated automatically')
-            setSelfAssessmentNeedingPlan(null)
-            void loadOverrides()
           } catch (planErr) {
             console.error('[auto plan generation on paid]', planErr)
+            toast.error('Plan generation failed unexpectedly')
+          } finally {
+            setGenerationWait(null)
           }
-        })()
+        }
       }
+
+      toast.success(labels[newStatus] ?? 'Status updated')
+      void loadOverrides()
     }
     setSavingStatus(false)
     setMarkAsOpen(false)
@@ -620,6 +713,7 @@ export function TherapistClientDetailPage() {
 
   return (
     <div className="space-y-6">
+      <ReportGenerationWaitOverlay open={generationWait !== null} variant={generationWait ?? 'plan'} />
       <div className="flex flex-wrap items-center gap-3" style={pageStaggerItemStyle(0, staggerVisible)}>
         <Button asChild variant="zenOutline" size="sm">
           <Link to="/app/therapist/clients">← Clients</Link>
@@ -704,9 +798,11 @@ export function TherapistClientDetailPage() {
             <CardDescription className="text-muted-foreground">
               {latestReportLoaded
                 ? hasLatestReport
-                  ? selfAssessmentNeedingPlan
-                    ? 'This client has a self-assessment report, but no 18-week plan has been generated yet.'
-                    : 'Plan progress and daily activities'
+                  ? zenGenerationHealth?.issues.length
+                    ? zenGenerationHealth.issues.join(' · ')
+                    : selfAssessmentNeedingPlan
+                      ? 'This client has a self-assessment report, but no 18-week plan has been generated yet.'
+                      : 'Plan progress and daily activities'
                   : 'This client does not have a personalized plan yet.'
                 : 'Checking assessment status…'}
             </CardDescription>
@@ -721,7 +817,54 @@ export function TherapistClientDetailPage() {
         </Card>
       </div>
 
-      <Card className={glassNotes} style={pageStaggerItemStyle(4, staggerVisible)}>
+      {showScrapRegenerateCard ? (
+        <Card className={glassRegen} style={pageStaggerItemStyle(4, staggerVisible)}>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-foreground">
+              <RefreshCw className="size-4 text-sky-300" aria-hidden />
+              Regenerate plan &amp; ritual
+            </CardTitle>
+            <CardDescription className="text-muted-foreground">
+              Replaces the current 18-week plan and Fourfold Zen ritual with freshly generated content using the
+              latest formatting. The wellness report body is kept. This can take 3–4 minutes.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <Button
+              type="button"
+              variant="zenOutline"
+              disabled={generationWait !== null}
+              onClick={() => setScrapConfirmOpen(true)}
+            >
+              <RefreshCw className="mr-1.5 size-4" aria-hidden />
+              Scrap and regenerate
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <Dialog open={scrapConfirmOpen} onOpenChange={setScrapConfirmOpen}>
+        <DialogContent className="zen-glass-card max-w-md border-white/15">
+          <DialogHeader>
+            <DialogTitle className="text-foreground">Regenerate plan and ritual?</DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              This will delete the existing 18-week plan and Fourfold Zen ritual for this client and generate new
+              ones. The self-assessment report sections will stay as they are. You must stay on this page until
+              generation finishes.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="zenOutline" onClick={() => setScrapConfirmOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" variant="zen" onClick={() => void handleScrapAndRegeneratePlan()}>
+              Regenerate
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Card className={glassNotes} style={pageStaggerItemStyle(5, staggerVisible)}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-foreground">
             <StickyNote className="size-4 text-sky-300" aria-hidden />

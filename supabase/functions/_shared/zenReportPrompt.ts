@@ -791,6 +791,112 @@ function hasReportSubDelimiters(content: string): boolean {
   )
 }
 
+/**
+ * Public detector for the new report-subsection format. Used to distinguish reports generated
+ * after the subsection split (which carry CLIENT_INFO/KEY_CONCERNS/… delimiters) from legacy
+ * reports that must be handled the old way.
+ */
+export function hasReportSubsectionDelimiters(content: string): boolean {
+  return hasReportSubDelimiters(content)
+}
+
+const REPORT_SUBSECTION_DB_KEYS = [
+  'report_client_info',
+  'report_key_concerns',
+  'report_current_state',
+  'report_balance_zone',
+  'report_blossom_zone',
+  'report_bliss_zone',
+  'report_integrated_interpretation',
+] as const
+
+/** True when every report subsection column is populated (new-format split complete). */
+export function reportSubsectionsAreComplete(row: Record<string, unknown>): boolean {
+  return REPORT_SUBSECTION_DB_KEYS.every(k => {
+    const v = row[k]
+    return typeof v === 'string' && v.trim().length > 0
+  })
+}
+
+/** Some subsection columns filled but not all — typical after a failed plan-generation run. */
+export function reportSubsectionsArePartial(row: Record<string, unknown>): boolean {
+  const filled = REPORT_SUBSECTION_DB_KEYS.filter(k => {
+    const v = row[k]
+    return typeof v === 'string' && v.trim().length > 0
+  }).length
+  return filled > 0 && filled < REPORT_SUBSECTION_DB_KEYS.length
+}
+
+/**
+ * Resolve legacy aggregate report HTML + final narrative from stored columns.
+ * Final may live in final_narrative_section, content delimiters, or at the end of report HTML.
+ */
+export function resolveLegacyReportBodyAndFinal(params: {
+  reportSection: string
+  finalNarrativeSection: string
+  content: string
+}): { reportHtml: string; finalHtml: string } {
+  const rs = params.reportSection.trim()
+  const finCol = params.finalNarrativeSection.trim()
+  const content = params.content.trim()
+
+  let reportHtml = rs
+  let finalHtml = finCol
+
+  if (!reportHtml && content) {
+    const p = parseReportSections(content)
+    reportHtml = p.reportSection.trim()
+    if (!finalHtml) finalHtml = p.finalNarrativeSection.trim()
+  }
+
+  if (!finalHtml && reportHtml) {
+    finalHtml = splitFinalNarrativeFromReportHtml(reportHtml)
+  }
+
+  return { reportHtml, finalHtml }
+}
+
+/** Extract final narrative bundled at the end of legacy report HTML (no subsection delimiters). */
+export function splitFinalNarrativeFromReportHtml(reportHtml: string): string {
+  const text = reportHtml.trim()
+  if (!text) return ''
+
+  const mdMatch = text.match(/\n#{1,3}\s*FINAL\s+NARRATIVE[^\n]*\n/i)
+  if (mdMatch && mdMatch.index !== undefined) {
+    return text.slice(mdMatch.index + mdMatch[0].length).trim()
+  }
+
+  const htmlMatch = text.match(/<h[23][^>]*>\s*FINAL\s+NARRATIVE[^<]*<\/h[23]>/i)
+  if (htmlMatch && htmlMatch.index !== undefined) {
+    return text.slice(htmlMatch.index + htmlMatch[0].length).trim()
+  }
+
+  return ''
+}
+
+/**
+ * Whether plan generation should use the legacy storage path (aggregate HTML columns only).
+ * Includes old reports and partial/failed migrations that still have report_section.
+ */
+export function shouldUseLegacyPlanGenerationPath(params: {
+  content: string
+  reportSection: string
+  reportRow: Record<string, unknown>
+}): boolean {
+  const content = params.content.trim()
+  const rs = params.reportSection.trim()
+  if (!hasReportSubsectionDelimiters(content) && !hasReportSubsectionDelimiters(rs)) {
+    return true
+  }
+  if (reportSubsectionsArePartial(params.reportRow) && rs.length > 0) {
+    return true
+  }
+  if (rs.length > 0 && !reportSubsectionsAreComplete(params.reportRow)) {
+    return true
+  }
+  return false
+}
+
 function hasRitualSubDelimiters(content: string): boolean {
   return (
     content.includes(RITUAL_EXPLAIN_DELIM) ||
@@ -801,8 +907,21 @@ function hasRitualSubDelimiters(content: string): boolean {
   )
 }
 
+const SECTION_MARKER_LINE_RE = /^---SECTION:[A-Z0-9_]+---\s*$/i
+
+/** Remove delimiter marker lines the model echoed into subsection body HTML. */
+export function stripSectionDelimiterMarkers(text: string): string {
+  if (!text?.trim()) return ''
+  const lines = text.split('\n')
+  const filtered = lines.filter(line => !SECTION_MARKER_LINE_RE.test(line.trim()))
+  return filtered
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
 function stripBoundaryHeading(html: string, patterns: RegExp[]): string {
-  let t = html.trim()
+  let t = stripSectionDelimiterMarkers(html.trim())
   if (!t) return ''
   const hMatch = t.match(/^<h[23][^>]*>([\s\S]*?)<\/h[23]>\s*/i)
   if (hMatch) {
@@ -811,7 +930,32 @@ function stripBoundaryHeading(html: string, patterns: RegExp[]): string {
       t = t.slice(hMatch[0].length).trim()
     }
   }
-  return t
+  return stripSectionDelimiterMarkers(t)
+}
+
+/** Normalize ritual subsection fields after parsing (no delimiter lines in stored HTML). */
+export function sanitizeRitualSubsections(parts: RitualSubsections): RitualSubsections {
+  return {
+    explain: stripSectionDelimiterMarkers(parts.explain),
+    somatic: stripSectionDelimiterMarkers(parts.somatic),
+    mental: stripSectionDelimiterMarkers(parts.mental),
+    daily: stripSectionDelimiterMarkers(parts.daily),
+    reflect: stripSectionDelimiterMarkers(parts.reflect),
+  }
+}
+
+/** Normalize report subsection fields after parsing. */
+export function sanitizeReportSubsections(parts: ReportSubsections): ReportSubsections {
+  return {
+    clientInfo: stripSectionDelimiterMarkers(parts.clientInfo),
+    keyConcerns: stripSectionDelimiterMarkers(parts.keyConcerns),
+    currentState: stripSectionDelimiterMarkers(parts.currentState),
+    balanceZone: stripSectionDelimiterMarkers(parts.balanceZone),
+    blossomZone: stripSectionDelimiterMarkers(parts.blossomZone),
+    blissZone: stripSectionDelimiterMarkers(parts.blissZone),
+    integrated: stripSectionDelimiterMarkers(parts.integrated),
+    finalNarrative: stripSectionDelimiterMarkers(parts.finalNarrative),
+  }
 }
 
 function parseDelimitedSlices<T extends string>(
@@ -848,7 +992,7 @@ export function parseReportSubsections(raw: string): ReportSubsections & { usedN
   let body = t
   if (hasReportSubDelimiters(t)) {
     const slices = parseDelimitedSlices(t, REPORT_SUB_DELIMS)
-    return { ...slices, usedNewFormat: true }
+    return { ...sanitizeReportSubsections(slices), usedNewFormat: true }
   }
 
   const ri = t.indexOf(REPORT_DELIM)
@@ -859,8 +1003,10 @@ export function parseReportSubsections(raw: string): ReportSubsections & { usedN
     if (hasReportSubDelimiters(body)) {
       const slices = parseDelimitedSlices(body, REPORT_SUB_DELIMS.filter(s => s.key !== 'finalNarrative'))
       return {
-        ...slices,
-        finalNarrative: stripBoundaryHeading(finalPart, [/final\s+narrative/i]),
+        ...sanitizeReportSubsections({
+          ...slices,
+          finalNarrative: stripBoundaryHeading(finalPart, [/final\s+narrative/i]),
+        }),
         usedNewFormat: true,
       }
     }
@@ -874,7 +1020,7 @@ export function parseReportSubsections(raw: string): ReportSubsections & { usedN
 
   if (fi !== -1) {
     const slices = parseDelimitedSlices(t, REPORT_SUB_DELIMS)
-    if (hasReportSubDelimiters(t)) return { ...slices, usedNewFormat: true }
+    if (hasReportSubDelimiters(t)) return { ...sanitizeReportSubsections(slices), usedNewFormat: true }
   }
 
   return { ...EMPTY_REPORT_SUBSECTIONS, usedNewFormat: false }
@@ -887,14 +1033,14 @@ export function parseRitualSubsections(raw: string): RitualSubsections & { usedN
 
   if (hasRitualSubDelimiters(t)) {
     const slices = parseDelimitedSlices(t, RITUAL_SUB_DELIMS)
-    return { ...slices, usedNewFormat: true }
+    return { ...sanitizeRitualSubsections(slices), usedNewFormat: true }
   }
 
   const ri = t.indexOf(RITUAL_DELIM)
   const body = ri !== -1 ? t.substring(ri + RITUAL_DELIM.length).trim() : t
   if (hasRitualSubDelimiters(body)) {
     const slices = parseDelimitedSlices(body, RITUAL_SUB_DELIMS)
-    return { ...slices, usedNewFormat: true }
+    return { ...sanitizeRitualSubsections(slices), usedNewFormat: true }
   }
 
   return { ...EMPTY_RITUAL_SUBSECTIONS, usedNewFormat: false }
@@ -997,6 +1143,12 @@ export function buildReportDbFields(
     if (!finalNarrative) finalNarrative = legacy.finalNarrativeSection
   }
 
+  if (parsed.usedNewFormat || reportSubsectionsHaveContent(parts)) {
+    parts = sanitizeReportSubsections({ ...parts, finalNarrative })
+    finalNarrative = parts.finalNarrative
+    reportSection = assembleReportSection(parts)
+  }
+
   const nullIfEmpty = (s: string) => (s.trim() ? s.trim() : null)
 
   return {
@@ -1035,6 +1187,9 @@ export function buildRitualDbFields(
     ritualSection = parseRitualSectionOnly(rawFallback) || rawFallback.trim()
   }
 
+  parts = sanitizeRitualSubsections(parts)
+  ritualSection = assembleRitualSection(parts)
+
   const nullIfEmpty = (s: string) => (s.trim() ? s.trim() : null)
 
   return {
@@ -1053,13 +1208,13 @@ export function parseRemainingRitualSubsections(content: string): RitualSubsecti
   const { before, after } = parseRemainingRitualSections(content)
   const beforeParts = parseRitualSubsections(before)
   const afterParts = parseRitualSubsections(after)
-  return {
-    explain: beforeParts.explain || before.trim(),
+  return sanitizeRitualSubsections({
+    explain: beforeParts.explain,
     somatic: beforeParts.somatic,
     mental: '',
     daily: afterParts.daily,
     reflect: afterParts.reflect,
-  }
+  })
 }
 
 /** Self assessment / report step 1: report subsections + final in content blob. */
