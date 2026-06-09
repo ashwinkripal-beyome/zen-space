@@ -17,7 +17,7 @@ import { pageStaggerItemStyle, usePageStaggerVisible } from '@/hooks/usePageStag
 import { supabase } from '@/lib/supabase'
 import { isEveryPlanWeekMarkedComplete } from '@/lib/supervisedAssessmentEligibility'
 import { downloadZenPlanPdf } from '@/lib/zenPrintDocument'
-import { zenPrintPdfMetadata } from '@/lib/zenPrintPayloadHelpers'
+import { assemblePrintRitualHtml, zenPrintPdfMetadata } from '@/lib/zenPrintPayloadHelpers'
 import { cn } from '@/lib/utils'
 
 function formatReassessDate(d: Date): string {
@@ -169,7 +169,7 @@ export function ClientPlanPage() {
   const handleDownloadPdf = async () => {
     if (!latestReport || pdfLoading) return
     const reportHtml = latestReport.report_section || latestReport.content || ''
-    const ritualHtml = ritualContent || ''
+    const ritualHtml = assemblePrintRitualHtml(latestReport)
     const finalHtml = latestReport.final_narrative_section || ''
     const planHtml = latestReport.plan_section || ''
     const meta = zenPrintPdfMetadata(

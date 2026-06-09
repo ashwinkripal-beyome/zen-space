@@ -18,7 +18,7 @@ import {
 } from '@/data/benchmarkAssessment'
 import { supabase } from '@/lib/supabase'
 import { downloadZenPlanPdf } from '@/lib/zenPrintDocument'
-import { zenPrintPdfMetadata } from '@/lib/zenPrintPayloadHelpers'
+import { assemblePrintRitualHtml, zenPrintPdfMetadata } from '@/lib/zenPrintPayloadHelpers'
 import {
   reportDetailTabButtonClassName,
   reportDetailTabListClassName,
@@ -293,7 +293,7 @@ export function TherapistClientReportDetailPage() {
   }
 
   const reportContent = report.reportSection || report.content || ''
-  const ritualContent = report.ritualSection || ''
+  const ritualContent = assemblePrintRitualHtml(report)
   const finalContent = report.finalNarrativeSection || ''
   const planSection = report.planSection || ''
   const reportDisplayParts = resolveReportDisplayParts(report)

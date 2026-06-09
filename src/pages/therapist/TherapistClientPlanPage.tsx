@@ -13,7 +13,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { pageStaggerItemStyle, usePageStaggerVisible } from '@/hooks/usePageStaggerVisible'
 import { supabase } from '@/lib/supabase'
 import { downloadZenPlanPdf } from '@/lib/zenPrintDocument'
-import { zenPrintPdfMetadata } from '@/lib/zenPrintPayloadHelpers'
+import { assemblePrintRitualHtml, zenPrintPdfMetadata } from '@/lib/zenPrintPayloadHelpers'
 import { cn } from '@/lib/utils'
 
 export function TherapistClientPlanPage() {
@@ -184,7 +184,7 @@ export function TherapistClientPlanPage() {
   const handleDownloadPdf = async () => {
     if (!latestReport || pdfLoading) return
     const reportHtml = latestReport.report_section || latestReport.content || ''
-    const ritualHtml = latestReport.ritual_section || ''
+    const ritualHtml = assemblePrintRitualHtml(latestReport)
     const finalHtml = latestReport.final_narrative_section || ''
     const planHtml = latestReport.plan_section || ''
     const meta = zenPrintPdfMetadata(latestReport.created_at, clientPrintProfile, latestReport.assessment)

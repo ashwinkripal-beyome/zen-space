@@ -1,4 +1,5 @@
 import { overallStatusLabel, zoneStatusLabel } from '@/lib/zenScoreLabels'
+import { stripSectionDelimiterMarkers } from '@/lib/sectionDelimiterMarkers'
 
 export type ZenPrintProfileFacts = {
   age?: string
@@ -107,6 +108,37 @@ export function buildProfileFactsFromAssessment(
   }
 
   return facts
+}
+
+/**
+ * Assembles a printable ritual HTML string from the available source, preferring
+ * the aggregate `ritual_section` column but falling back to the split subsection
+ * columns (`ritual_explain`, `ritual_somatic`, etc.) for reports where the split
+ * columns were stored but `ritual_section` was never written or is empty.
+ */
+export function assemblePrintRitualHtml(row: {
+  ritual_section?: string | null
+  ritualSection?: string | null
+  ritual_explain?: string | null
+  ritual_somatic?: string | null
+  ritual_mental?: string | null
+  ritual_daily?: string | null
+  ritual_reflect?: string | null
+}): string {
+  const agg = (row.ritual_section || row.ritualSection || '').trim()
+  if (agg) return agg
+
+  const parts = [
+    row.ritual_explain,
+    row.ritual_somatic,
+    row.ritual_mental,
+    row.ritual_daily,
+    row.ritual_reflect,
+  ]
+    .map(s => stripSectionDelimiterMarkers(s || '').trim())
+    .filter(Boolean)
+
+  return parts.join('\n\n')
 }
 
 /** Cover title, date label, and profile facts for `printZenPlanPdf` (optional fields). */

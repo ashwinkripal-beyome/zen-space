@@ -14,7 +14,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { pageStaggerItemStyle, usePageStaggerVisible } from '@/hooks/usePageStaggerVisible'
 import { supabase } from '@/lib/supabase'
 import { downloadZenPlanPdf } from '@/lib/zenPrintDocument'
-import { zenPrintPdfMetadata } from '@/lib/zenPrintPayloadHelpers'
+import { assemblePrintRitualHtml, zenPrintPdfMetadata } from '@/lib/zenPrintPayloadHelpers'
 import {
   reportDetailTabButtonClassName,
   reportDetailTabListClassName,
@@ -129,7 +129,7 @@ export function ClientReportDetailPage() {
   const handlePrintPdf = async () => {
     if (!report || pdfLoading) return
     const reportContent = report.reportSection || report.content || ''
-    const ritualContent = report.ritualSection || ''
+    const ritualContent = assemblePrintRitualHtml(report)
     const finalContent = report.finalNarrativeSection || ''
     const planContent = report.planSection || ''
     const meta = zenPrintPdfMetadata(
