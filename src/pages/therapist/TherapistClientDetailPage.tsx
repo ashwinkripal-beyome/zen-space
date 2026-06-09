@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { Link, useParams } from 'react-router-dom'
-import { CalendarDays, Loader2, Mail, Phone, RefreshCw, StickyNote, Trash2 } from 'lucide-react'
+import { ArrowLeft, CalendarDays, CreditCard, Loader2, Mail, Phone, RefreshCw, StickyNote, Trash2, Wallet } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -27,6 +27,9 @@ import {
   ReportGenerationWaitOverlay,
   type ReportGenerationWaitVariant,
 } from '@/components/ReportGenerationWaitOverlay'
+import { OneOnOneActivitySelector } from '@/components/OneOnOneActivitySelector'
+import { PLAN_META } from '@/lib/planTiers'
+import { startRazorpayCheckout } from '@/lib/razorpay'
 import { messageFromFunctionInvokeFailure } from '@/lib/functionInvokeError'
 import { assessZenGenerationHealth, type ZenGenerationHealth } from '@/lib/reportGenerationHealth'
 import { supabase } from '@/lib/supabase'
@@ -102,6 +105,7 @@ function ageFromDob(dob: string | null | undefined): number | null {
 
 type ClientProfileRow = ProfileNameFields & {
   id: string
+  email: string
   gender: string | null
   age: number | null
   phone_number: string | null
@@ -111,21 +115,22 @@ type ClientProfileRow = ProfileNameFields & {
   company_not_listed: boolean
   is_paid_customer: boolean
   client_status: string | null
+  current_plan: string | null
 }
 
-type MarkAsOption = {
-  value: 'pro' | 'contacted' | 'dropped'
+type LifecycleOption = {
+  value: 'contacted' | 'dropped' | 'stopped_pro'
   label: string
   description: string
   badgeClass: string
 }
 
-const MARK_AS_OPTIONS: MarkAsOption[] = [
+const LIFECYCLE_OPTIONS: LifecycleOption[] = [
   {
-    value: 'pro',
-    label: 'Mark as paid',
-    description: 'Mark this client as a paid customer to enable supervised assessments.',
-    badgeClass: CLIENT_STATUS_META.pro.badgeClass,
+    value: 'stopped_pro',
+    label: 'Stopped Pro',
+    description: 'Revoke paid access without deleting their generated plan and ritual content.',
+    badgeClass: CLIENT_STATUS_META.stopped_pro.badgeClass,
   },
   {
     value: 'contacted',
@@ -141,6 +146,9 @@ const MARK_AS_OPTIONS: MarkAsOption[] = [
   },
 ]
 
+type PaidPlan = '18_week_semi_guided' | 'one_on_one_intensive'
+type MarkAsStep = 'main' | 'paid-plan' | 'paid-method'
+
 export function TherapistClientDetailPage() {
   const { user } = useAuth()
   const { clientId } = useParams<{ clientId: string }>()
@@ -149,6 +157,9 @@ export function TherapistClientDetailPage() {
   const [profile, setProfile] = useState<ClientProfileRow | null>(null)
   const [savingStatus, setSavingStatus] = useState(false)
   const [markAsOpen, setMarkAsOpen] = useState(false)
+  const [markAsStep, setMarkAsStep] = useState<MarkAsStep>('main')
+  const [markAsPlan, setMarkAsPlan] = useState<PaidPlan | null>(null)
+  const [razorpayStatus, setRazorpayStatus] = useState<string | null>(null)
   const [hasCompletedSelfAssessment, setHasCompletedSelfAssessment] = useState(false)
   const [notes, setNotes] = useState<ClientTherapistNoteRow[]>([])
   const [notesLoading, setNotesLoading] = useState(false)
@@ -188,9 +199,9 @@ export function TherapistClientDetailPage() {
         supabase
           .from('profiles')
           .select(
-            'id, email, name, first_name, last_name, gender, age, phone_number, dob, company, company_not_listed, is_paid_customer, client_status, company_department:company_departments(name)'
+            'id, email, name, first_name, last_name, gender, age, phone_number, dob, company, company_not_listed, is_paid_customer, client_status, current_plan, company_department:company_departments(name)'
           )
-          .eq('id', clientId)
+          .eq('id', clientId!)
           .maybeSingle(),
         supabase
           .from('assessments')
@@ -238,6 +249,7 @@ export function TherapistClientDetailPage() {
         company_not_listed: Boolean(p.company_not_listed),
         is_paid_customer: paid,
         client_status: typeof p.client_status === 'string' ? p.client_status : null,
+        current_plan: typeof p.current_plan === 'string' ? p.current_plan : null,
       })
       setHasCompletedSelfAssessment(Boolean(selfAssessmentResult.data?.id))
     } finally {
@@ -347,90 +359,94 @@ export function TherapistClientDetailPage() {
   const [supervisedEligibility, setSupervisedEligibility] = useState<SupervisedEligibility | null>(null)
   const [enablingSupervised, setEnablingSupervised] = useState(false)
 
-  /** Latest completed self assessment id when its report has no 18-week plan yet. */
-  const [selfAssessmentNeedingPlan, setSelfAssessmentNeedingPlan] = useState<string | null>(null)
+  /** Generic target for plan generation — the latest report (any mode) that has a completed assessment. */
+  type PlanTarget = {
+    assessmentId: string
+    reportId: string
+    assessmentMode: 'self' | 'supervised'
+    hasPlan: boolean
+  }
+  const [planTarget, setPlanTarget] = useState<PlanTarget | null>(null)
+  /** True when the latest report has no plan yet (needs generation). */
+  const [planTargetNeedsGeneration, setPlanTargetNeedsGeneration] = useState<boolean>(false)
   const [zenGenerationHealth, setZenGenerationHealth] = useState<ZenGenerationHealth | null>(null)
   const [generationWait, setGenerationWait] = useState<ReportGenerationWaitVariant | null>(null)
-  const [selfAssessmentId, setSelfAssessmentId] = useState<string | null>(null)
   const [scrapConfirmOpen, setScrapConfirmOpen] = useState(false)
   const [latestReportLoaded, setLatestReportLoaded] = useState(false)
   const [hasLatestReport, setHasLatestReport] = useState(false)
 
   const loadZenGenerationHealth = useCallback(async () => {
     if (!clientId) {
-      setSelfAssessmentNeedingPlan(null)
+      setPlanTarget(null)
+      setPlanTargetNeedsGeneration(false)
       setZenGenerationHealth(null)
       return
     }
-    const { data: selfA, error: selfErr } = await supabase
-      .from('assessments')
-      .select('id, assessment_mode')
-      .eq('client_id', clientId)
-      .eq('assessment_mode', 'self')
-      .eq('status', 'completed')
-      .order('completed_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
 
-    if (selfErr) {
-      console.error('[assessments self for plan cta]', selfErr)
-      setSelfAssessmentNeedingPlan(null)
-      setZenGenerationHealth(null)
-      setSelfAssessmentId(null)
-      return
-    }
-    if (!selfA?.id) {
-      setSelfAssessmentNeedingPlan(null)
-      setZenGenerationHealth(null)
-      setSelfAssessmentId(null)
-      return
-    }
-    setSelfAssessmentId(selfA.id)
-
+    // Query the latest report (any assessment mode), join its assessment.
     const { data: rep, error: repErr } = await supabase
       .from('reports')
       .select(
-        'id, plan_section, report_section, content, final_narrative_section, report_client_info, report_key_concerns, report_current_state, report_balance_zone, report_blossom_zone, report_bliss_zone, report_integrated_interpretation'
+        'id, plan_section, report_section, content, final_narrative_section, report_client_info, report_key_concerns, report_current_state, report_balance_zone, report_blossom_zone, report_bliss_zone, report_integrated_interpretation, assessment_id, assessments ( id, assessment_mode, status )'
       )
-      .eq('assessment_id', selfA.id)
+      .eq('client_id', clientId)
+      .order('created_at', { ascending: false })
+      .limit(1)
       .maybeSingle()
 
     if (repErr) {
-      console.error('[reports plan cta]', repErr)
-      setSelfAssessmentNeedingPlan(null)
+      console.error('[loadZenGenerationHealth]', repErr)
+      setPlanTarget(null)
+      setPlanTargetNeedsGeneration(false)
       setZenGenerationHealth(null)
       return
     }
     if (!rep) {
-      setSelfAssessmentNeedingPlan(null)
+      setPlanTarget(null)
+      setPlanTargetNeedsGeneration(false)
       setZenGenerationHealth(null)
       return
     }
 
+    // Resolve joined assessment row (Supabase may return array or object).
+    const aJoin = rep.assessments as
+      | { id: string; assessment_mode: string; status: string }
+      | { id: string; assessment_mode: string; status: string }[]
+      | null
+    const aRow = Array.isArray(aJoin) ? aJoin[0] : aJoin
+    const assessmentId = (aRow?.id ?? (rep.assessment_id as string | null | undefined)) as string | null
+    const assessmentMode = ((aRow?.assessment_mode as string | undefined) ?? 'self') as 'self' | 'supervised'
+
+    if (!assessmentId) {
+      setPlanTarget(null)
+      setPlanTargetNeedsGeneration(false)
+      setZenGenerationHealth(null)
+      return
+    }
+
+    const hasPlan = Boolean((rep.plan_section as string)?.trim())
+    setPlanTarget({ assessmentId, reportId: rep.id as string, assessmentMode, hasPlan })
+    setPlanTargetNeedsGeneration(!hasPlan)
+
     const health = assessZenGenerationHealth({
-      assessmentId: selfA.id,
-      assessmentMode: 'self',
-      report: rep
-        ? {
-            id: rep.id as string,
-            plan_section: (rep.plan_section as string) || null,
-            report_section: (rep.report_section as string) || null,
-            content: (rep.content as string) || null,
-            final_narrative_section: (rep.final_narrative_section as string) || null,
-            report_client_info: (rep.report_client_info as string) || null,
-            report_key_concerns: (rep.report_key_concerns as string) || null,
-            report_current_state: (rep.report_current_state as string) || null,
-            report_balance_zone: (rep.report_balance_zone as string) || null,
-            report_blossom_zone: (rep.report_blossom_zone as string) || null,
-            report_bliss_zone: (rep.report_bliss_zone as string) || null,
-            report_integrated_interpretation: (rep.report_integrated_interpretation as string) || null,
-          }
-        : null,
+      assessmentId,
+      assessmentMode,
+      report: {
+        id: rep.id as string,
+        plan_section: (rep.plan_section as string) || null,
+        report_section: (rep.report_section as string) || null,
+        content: (rep.content as string) || null,
+        final_narrative_section: (rep.final_narrative_section as string) || null,
+        report_client_info: (rep.report_client_info as string) || null,
+        report_key_concerns: (rep.report_key_concerns as string) || null,
+        report_current_state: (rep.report_current_state as string) || null,
+        report_balance_zone: (rep.report_balance_zone as string) || null,
+        report_blossom_zone: (rep.report_blossom_zone as string) || null,
+        report_integrated_interpretation: (rep.report_integrated_interpretation as string) || null,
+      },
       expectPlanForSelfReport: profile?.is_paid_customer === true,
     })
-
     setZenGenerationHealth(health)
-    setSelfAssessmentNeedingPlan(health.needsPlanRegeneration ? selfA.id : null)
   }, [clientId, profile?.is_paid_customer])
 
   const invokeZenFunction = async (
@@ -455,34 +471,29 @@ export function TherapistClientDetailPage() {
     return { ok: true }
   }
 
-  const fetchSelfAssessmentIdNeedingPlan = async (): Promise<string | null> => {
+  /** Find the latest report missing a plan (any assessment mode) and return its assessment id. */
+  const fetchLatestAssessmentIdNeedingPlan = async (): Promise<string | null> => {
     if (!clientId) return null
-    const { data: selfA } = await supabase
-      .from('assessments')
-      .select('id')
-      .eq('client_id', clientId)
-      .eq('assessment_mode', 'self')
-      .eq('status', 'completed')
-      .order('completed_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    if (!selfA?.id) return null
     const { data: rep } = await supabase
       .from('reports')
-      .select('plan_section')
-      .eq('assessment_id', selfA.id)
-      .maybeSingle()
-    if (!rep) return null
-    const ps = (rep.plan_section as string) || ''
-    return ps.trim().length === 0 ? selfA.id : null
+      .select('assessment_id, plan_section')
+      .eq('client_id', clientId)
+      .order('created_at', { ascending: false })
+      .limit(5)
+    if (!rep?.length) return null
+    for (const r of rep) {
+      const ps = (r.plan_section as string) || ''
+      if (ps.trim().length === 0) return r.assessment_id as string
+    }
+    return null
   }
 
   const handleScrapAndRegeneratePlan = async () => {
-    if (!selfAssessmentId) return
+    if (!planTarget) return
     setScrapConfirmOpen(false)
     flushSync(() => setGenerationWait('plan'))
     try {
-      const planResult = await invokeZenFunction('generate-zen-plan', selfAssessmentId, {
+      const planResult = await invokeZenFunction('generate-zen-plan', planTarget.assessmentId, {
         force: true,
         scrapAndRegenerate: true,
       })
@@ -491,7 +502,6 @@ export function TherapistClientDetailPage() {
         return
       }
       toast.success('18-week plan and Fourfold ritual regenerated')
-      setSelfAssessmentNeedingPlan(null)
       void loadZenGenerationHealth()
       void loadOverrides()
     } catch (err) {
@@ -503,7 +513,7 @@ export function TherapistClientDetailPage() {
   }
 
   const showScrapRegenerateCard =
-    profile?.is_paid_customer === true && Boolean(selfAssessmentId) && hasLatestReport
+    profile?.is_paid_customer === true && Boolean(planTarget) && hasLatestReport
 
   const loadOverrides = useCallback(async () => {
     if (!user?.id || !clientId) return
@@ -607,7 +617,8 @@ export function TherapistClientDetailPage() {
     setEnablingSupervised(false)
   }
 
-  const handleSetStatus = async (newStatus: 'pro' | 'contacted' | 'dropped') => {
+  /** Lifecycle-only statuses (no plan selection needed). */
+  const handleSetLifecycleStatus = async (newStatus: 'contacted' | 'dropped' | 'stopped_pro') => {
     if (!clientId) return
     setSavingStatus(true)
     const { error } = await supabase.rpc('set_client_status', {
@@ -617,43 +628,125 @@ export function TherapistClientDetailPage() {
     if (error) {
       toast.error(error.message)
     } else {
-      const isPaid = newStatus === 'pro'
+      const isPaid = false
       setProfile(p => (p ? { ...p, client_status: newStatus, is_paid_customer: isPaid } : p))
       const labels: Record<string, string> = {
-        pro: 'Client marked as paid (Pro)',
+        stopped_pro: 'Paid access revoked — existing plan content is preserved',
         contacted: 'Client marked as contacted',
         dropped: 'Client marked as dropped',
       }
-
-      if (newStatus === 'pro') {
-        const assessmentIdForPlan = await fetchSelfAssessmentIdNeedingPlan()
-        if (assessmentIdForPlan) {
-          flushSync(() => setGenerationWait('plan'))
-          try {
-            const planResult = await invokeZenFunction('generate-zen-plan', assessmentIdForPlan, {
-              force: false,
-            })
-            if (!planResult.ok) {
-              toast.error(`Auto plan generation failed: ${planResult.message ?? ''}`)
-            } else {
-              toast.success('18-week plan generated automatically')
-              setSelfAssessmentNeedingPlan(null)
-              void loadZenGenerationHealth()
-            }
-          } catch (planErr) {
-            console.error('[auto plan generation on paid]', planErr)
-            toast.error('Plan generation failed unexpectedly')
-          } finally {
-            setGenerationWait(null)
-          }
-        }
-      }
-
       toast.success(labels[newStatus] ?? 'Status updated')
       void loadOverrides()
     }
     setSavingStatus(false)
+    closeMarkAsDialog()
+  }
+
+  /** Cash payment: call RPC then auto-generate if semi-guided. */
+  const handleMarkPaidCash = async (plan: PaidPlan) => {
+    if (!clientId) return
+    setSavingStatus(true)
+    const { error } = await supabase.rpc('set_client_paid', {
+      p_client_id: clientId,
+      p_plan: plan,
+    })
+    if (error) {
+      toast.error(error.message)
+      setSavingStatus(false)
+      return
+    }
+    setProfile(p => p ? { ...p, client_status: 'pro', is_paid_customer: true, current_plan: plan } : p)
+
+    if (plan === '18_week_semi_guided') {
+      const assessmentIdForPlan = await fetchLatestAssessmentIdNeedingPlan()
+      if (assessmentIdForPlan) {
+        flushSync(() => setGenerationWait('plan'))
+        try {
+          const planResult = await invokeZenFunction('generate-zen-plan', assessmentIdForPlan, { force: false })
+          if (!planResult.ok) {
+            toast.error(`Plan generation failed: ${planResult.message ?? ''}`)
+          } else {
+            toast.success('18-week plan generated automatically')
+            void loadZenGenerationHealth()
+          }
+        } catch (planErr) {
+          console.error('[auto plan generation on cash paid]', planErr)
+          toast.error('Plan generation failed unexpectedly')
+        } finally {
+          setGenerationWait(null)
+        }
+      }
+    }
+
+    toast.success(plan === '18_week_semi_guided' ? 'Client marked as paid (18-week semi-guided)' : 'Client marked as paid (1-on-1 intensive)')
+    void loadOverrides()
+    setSavingStatus(false)
+    closeMarkAsDialog()
+  }
+
+  /** Razorpay payment on behalf of the client (therapist-initiated checkout). */
+  const handleMarkPaidRazorpay = async (plan: PaidPlan) => {
+    if (!clientId || !profile) return
+    setSavingStatus(true)
+    setRazorpayStatus('Creating payment order…')
+
+    const clientName =
+      [profile.first_name, profile.last_name].filter(Boolean).join(' ') || profile.name || ''
+    const clientEmail = profile.email
+
+    const result = await startRazorpayCheckout(
+      plan,
+      clientName,
+      clientEmail,
+      msg => setRazorpayStatus(msg),
+      clientId
+    )
+
+    setRazorpayStatus(null)
+    setSavingStatus(false)
+
+    if (!result.ok) {
+      if (result.error !== 'Payment cancelled') toast.error(result.error)
+      return
+    }
+
+    setProfile(p => p ? { ...p, client_status: 'pro', is_paid_customer: true, current_plan: plan } : p)
+    toast.success('Payment successful! Plan activated.')
+
+    if (plan === '18_week_semi_guided') {
+      const assessmentIdForPlan = await fetchLatestAssessmentIdNeedingPlan()
+      if (assessmentIdForPlan) {
+        flushSync(() => setGenerationWait('plan'))
+        try {
+          const planResult = await invokeZenFunction('generate-zen-plan', assessmentIdForPlan, { force: false })
+          if (!planResult.ok) {
+            toast.error(`Plan generation failed: ${planResult.message ?? ''}`)
+          } else {
+            toast.success('18-week plan generated')
+            void loadZenGenerationHealth()
+          }
+        } catch {
+          toast.error('Plan generation failed unexpectedly')
+        } finally {
+          setGenerationWait(null)
+        }
+      }
+    }
+
+    void loadOverrides()
+    closeMarkAsDialog()
+  }
+
+  const openMarkAsDialog = () => {
+    setMarkAsStep('main')
+    setMarkAsPlan(null)
+    setMarkAsOpen(true)
+  }
+
+  const closeMarkAsDialog = () => {
     setMarkAsOpen(false)
+    setMarkAsStep('main')
+    setMarkAsPlan(null)
   }
 
   const effectiveStatus: ClientStatusLabel = computeClientStatus({
@@ -800,8 +893,8 @@ export function TherapistClientDetailPage() {
                 ? hasLatestReport
                   ? zenGenerationHealth?.issues.length
                     ? zenGenerationHealth.issues.join(' · ')
-                    : selfAssessmentNeedingPlan
-                      ? 'This client has a self-assessment report, but no 18-week plan has been generated yet.'
+                    : planTargetNeedsGeneration
+                      ? 'This client has a report but no 18-week plan has been generated yet.'
                       : 'Plan progress and daily activities'
                   : 'This client does not have a personalized plan yet.'
                 : 'Checking assessment status…'}
@@ -817,8 +910,54 @@ export function TherapistClientDetailPage() {
         </Card>
       </div>
 
+      {/* 1-on-1 Intensive Guided — activity selection workflow */}
+      {profile?.current_plan === 'one_on_one_intensive' ? (
+        planTarget && !planTarget.hasPlan ? (
+          <Card className={cn(glassControls, 'shadow-none')} style={pageStaggerItemStyle(4, staggerVisible)}>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-foreground">
+                <CalendarDays className="size-4 text-violet-300" aria-hidden />
+                1-on-1 Intensive — Activity selection
+              </CardTitle>
+              <CardDescription className="text-muted-foreground">
+                Select one activity for each of the 18 weeks. Once all weeks are filled, generate the personalised plan.
+                {planTarget.assessmentMode === 'supervised' && (
+                  <span className="ml-1 text-violet-400">(Supervised assessment)</span>
+                )}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <OneOnOneActivitySelector
+                clientId={clientId}
+                reportId={planTarget.reportId}
+                assessmentId={planTarget.assessmentId}
+                hasPlan={false}
+                onPlanGenerated={() => {
+                  void loadZenGenerationHealth()
+                  toast.success('1-on-1 plan generated!')
+                }}
+              />
+            </CardContent>
+          </Card>
+        ) : latestReportLoaded ? (
+          <Card className={cn(glassControls, 'shadow-none')} style={pageStaggerItemStyle(4, staggerVisible)}>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-foreground">
+                <CalendarDays className="size-4 text-violet-300" aria-hidden />
+                1-on-1 Intensive — Activity selection
+              </CardTitle>
+              <CardDescription className="text-muted-foreground">
+                {planTarget?.hasPlan
+                  ? 'Plan generated for the current assessment cycle. Activity selection will reopen after the next supervised assessment report is created.'
+                  : 'No report found for this client yet. Generate a supervised assessment report first, then return here to select 18 activities and build the personalised plan.'}
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        ) : null
+      ) : null}
+
       {showScrapRegenerateCard ? (
-        <Card className={glassRegen} style={pageStaggerItemStyle(4, staggerVisible)}>
+        <Card className={glassRegen} style={pageStaggerItemStyle(5, staggerVisible)}>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-foreground">
               <RefreshCw className="size-4 text-sky-300" aria-hidden />
@@ -973,7 +1112,7 @@ export function TherapistClientDetailPage() {
                 size="sm"
                 variant="zen"
                 disabled={savingStatus}
-                onClick={() => setMarkAsOpen(true)}
+                onClick={openMarkAsDialog}
               >
                 {savingStatus ? <Loader2 className="size-3.5 animate-spin" /> : 'Mark as'}
               </Button>
@@ -1066,50 +1205,188 @@ export function TherapistClientDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Mark as dialog — styled like the assessment disclaimer */}
-      <Dialog open={markAsOpen} onOpenChange={setMarkAsOpen}>
-        <DialogContent
-          className="zen-glass-card rounded-2xl border-white/15 text-foreground"
-        >
+      {/* Mark as dialog — multi-step */}
+      <Dialog open={markAsOpen} onOpenChange={open => { if (!open && !savingStatus) closeMarkAsDialog() }}>
+        <DialogContent className="zen-glass-card rounded-2xl border-white/15 text-foreground">
           <DialogHeader>
             <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
               Client status
             </p>
-            <DialogTitle className="text-foreground">Mark as</DialogTitle>
+            <DialogTitle className="text-foreground">
+              {markAsStep === 'main' && 'Mark as'}
+              {markAsStep === 'paid-plan' && 'Select plan'}
+              {markAsStep === 'paid-method' && (
+                <span className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="flex items-center gap-1 text-sm font-normal text-muted-foreground hover:text-foreground"
+                    onClick={() => setMarkAsStep('paid-plan')}
+                  >
+                    <ArrowLeft className="size-3.5" aria-hidden /> Back
+                  </button>
+                  <span className="ml-1">Payment method</span>
+                </span>
+              )}
+            </DialogTitle>
           </DialogHeader>
-          <div className="space-y-3 py-1">
-            {MARK_AS_OPTIONS.map(opt => (
+
+          {/* Step 1 — main options */}
+          {markAsStep === 'main' && (
+            <div className="space-y-3 py-1">
+              {/* Mark as paid — goes to plan selection */}
               <button
-                key={opt.value}
                 type="button"
                 disabled={savingStatus}
-                onClick={() => void handleSetStatus(opt.value)}
+                onClick={() => setMarkAsStep('paid-plan')}
                 className={cn(
                   'w-full rounded-xl border px-4 py-3 text-left transition-all',
                   'hover:bg-white/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30',
-                  effectiveStatus === opt.value
+                  effectiveStatus === 'pro'
                     ? 'border-white/25 bg-white/[0.06]'
                     : 'border-white/10 bg-white/[0.03]'
                 )}
               >
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm font-medium text-foreground">{opt.label}</span>
-                  {effectiveStatus === opt.value && (
-                    <Badge variant="outline" className={cn('shrink-0 capitalize', opt.badgeClass)}>
+                  <span className="text-sm font-medium text-foreground">Mark as paid</span>
+                  {effectiveStatus === 'pro' && (
+                    <Badge variant="outline" className={cn('shrink-0', CLIENT_STATUS_META.pro.badgeClass)}>
                       Current
                     </Badge>
                   )}
                 </div>
-                <p className="mt-0.5 text-xs text-muted-foreground">{opt.description}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Choose a plan and payment method (cash or Razorpay).
+                </p>
               </button>
-            ))}
-          </div>
+
+              {/* Lifecycle options */}
+              {LIFECYCLE_OPTIONS.map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  disabled={savingStatus}
+                  onClick={() => void handleSetLifecycleStatus(opt.value)}
+                  className={cn(
+                    'w-full rounded-xl border px-4 py-3 text-left transition-all',
+                    'hover:bg-white/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30',
+                    effectiveStatus === opt.value
+                      ? 'border-white/25 bg-white/[0.06]'
+                      : 'border-white/10 bg-white/[0.03]'
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-medium text-foreground">{opt.label}</span>
+                    {effectiveStatus === opt.value && (
+                      <Badge variant="outline" className={cn('shrink-0', opt.badgeClass)}>
+                        Current
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{opt.description}</p>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Step 2 — pick plan */}
+          {markAsStep === 'paid-plan' && (
+            <div className="space-y-3 py-1">
+              {(['18_week_semi_guided', 'one_on_one_intensive'] as const).map(tier => {
+                const meta = PLAN_META[tier]
+                const isCurrent = profile?.current_plan === tier
+                return (
+                  <button
+                    key={tier}
+                    type="button"
+                    disabled={savingStatus}
+                    onClick={() => { setMarkAsPlan(tier); setMarkAsStep('paid-method') }}
+                    className={cn(
+                      'w-full rounded-xl border px-4 py-3 text-left transition-all',
+                      'hover:bg-white/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30',
+                      isCurrent
+                        ? 'border-white/25 bg-white/[0.06]'
+                        : 'border-white/10 bg-white/[0.03]'
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm font-medium text-foreground">{meta.label}</span>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span className="text-sm font-semibold text-foreground">{meta.priceLabel}</span>
+                        {isCurrent && (
+                          <Badge variant="outline" className={cn(CLIENT_STATUS_META.pro.badgeClass)}>
+                            Current
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{meta.description}</p>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Step 3 — pick payment method */}
+          {markAsStep === 'paid-method' && markAsPlan && (
+            <div className="space-y-3 py-1">
+              <p className="text-xs text-muted-foreground">
+                Plan: <span className="font-medium text-foreground">{PLAN_META[markAsPlan].label}</span>
+                {' · '}{PLAN_META[markAsPlan].priceLabel}
+              </p>
+
+              <button
+                type="button"
+                disabled={savingStatus}
+                onClick={() => void handleMarkPaidCash(markAsPlan)}
+                className={cn(
+                  'w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-left transition-all',
+                  'hover:bg-white/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30'
+                )}
+              >
+                <div className="flex items-center gap-3">
+                  <Wallet className="size-4 shrink-0 text-emerald-300" aria-hidden />
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Paid in cash</p>
+                    <p className="text-xs text-muted-foreground">Mark as paid immediately — no payment gateway needed.</p>
+                  </div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                disabled={savingStatus}
+                onClick={() => void handleMarkPaidRazorpay(markAsPlan)}
+                className={cn(
+                  'w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-left transition-all',
+                  'hover:bg-white/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30'
+                )}
+              >
+                <div className="flex items-center gap-3">
+                  <CreditCard className="size-4 shrink-0 text-sky-300" aria-hidden />
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Razorpay</p>
+                    <p className="text-xs text-muted-foreground">
+                      Open payment checkout and record payment against this client's account.
+                      {razorpayStatus && <span className="ml-1 text-sky-300">{razorpayStatus}</span>}
+                    </p>
+                  </div>
+                </div>
+              </button>
+            </div>
+          )}
+
           <DialogFooter>
+            {savingStatus && (
+              <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                {razorpayStatus ?? 'Saving…'}
+              </span>
+            )}
             <Button
               type="button"
               variant="zenOutline"
               disabled={savingStatus}
-              onClick={() => setMarkAsOpen(false)}
+              onClick={closeMarkAsDialog}
             >
               Cancel
             </Button>

@@ -32,6 +32,10 @@ export interface Profile {
   company_not_listed?: boolean
   /** Client: supervised assessments require this (set by any linked therapist, shared across links). */
   is_paid_customer?: boolean
+  /** Client: active plan tier — null/undefined means free. */
+  current_plan?: string | null
+  /** Client: manual lifecycle label set by therapist. */
+  client_status?: string | null
   /** True once a new client has been redirected to Assessments on first login. */
   client_initial_login_redirect_done?: boolean
   /** Present on rows from `profiles` select; used to detect refetched data. */

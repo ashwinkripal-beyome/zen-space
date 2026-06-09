@@ -140,9 +140,14 @@ Deno.serve(async (req: Request) => {
 
     const { data: profile } = await admin
       .from('profiles')
-      .select('first_name, name, email, age, dob, gender, occupation')
+      .select('first_name, name, email, age, dob, gender, occupation, current_plan')
       .eq('id', assessment.client_id)
       .maybeSingle()
+
+    // For 1-on-1 intensive clients the therapist will select 18 activities and
+    // then trigger generate-zen-plan separately. Only generate the report body here
+    // so that the activity selector isn't bypassed.
+    const isOneOnOne = (profile?.current_plan as string | null) === 'one_on_one_intensive'
 
     const displayName =
       (profile?.first_name as string)?.trim() ||
@@ -198,11 +203,10 @@ Deno.serve(async (req: Request) => {
       therapistObservations: (assessment.therapist_observations || null) as Record<string, unknown> | null,
     }
     const userMessageReport = buildReportUserMessage(reportParams)
-    const userMessagePlan = buildPlan18UserMessage(reportParams)
-    const userMessageRitual = buildRitualUserMessage(reportParams)
 
     const model = Deno.env.get('OPENAI_MODEL') || 'gpt-4o-mini'
 
+    // --- Step 1: Report body (always) ---
     const openaiReportRes = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -239,6 +243,51 @@ Deno.serve(async (req: Request) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
+
+    const reportDb = buildReportDbFields(parseReportSubsections(reportOnlyRaw), reportOnlyRaw)
+
+    // --- 1-on-1 intensive: store report body only; therapist will select activities and generate-zen-plan handles plan+rituals ---
+    if (isOneOnOne) {
+      const reportSections = parseReportSections(reportOnlyRaw)
+      const rowOneOnOne = {
+        assessment_id: assessmentId,
+        client_id: assessment.client_id,
+        therapist_id: user.id,
+        content: reportOnlyRaw,
+        report_section: reportDb.reportSection || reportSections.reportSection || null,
+        final_narrative_section: reportDb.finalNarrativeSection || reportSections.finalNarrativeSection || null,
+        report_client_info: reportDb.report_client_info,
+        report_key_concerns: reportDb.report_key_concerns,
+        report_current_state: reportDb.report_current_state,
+        report_balance_zone: reportDb.report_balance_zone,
+        report_blossom_zone: reportDb.report_blossom_zone,
+        report_bliss_zone: reportDb.report_bliss_zone,
+        report_integrated_interpretation: reportDb.report_integrated_interpretation,
+        imbalance_score: balanceScore,
+        blossom_zone_emotional: blossomScore,
+        bliss_zone_spiritual: blissScore,
+      }
+      const { data: repOneOnOne, error: repOneOnOneErr } = await admin
+        .from('reports')
+        .upsert(rowOneOnOne, { onConflict: 'assessment_id' })
+        .select('id')
+        .single()
+      if (repOneOnOneErr) {
+        console.error('reports upsert (1-on-1)', repOneOnOneErr)
+        return new Response(JSON.stringify({ error: repOneOnOneErr.message }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(
+        JSON.stringify({ ok: true, report_id: repOneOnOne.id, assessment_id: assessmentId, one_on_one: true }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // --- Semi-guided / default: also generate 18-week plan and Fourfold rituals ---
+    const userMessagePlan = buildPlan18UserMessage(reportParams)
+    const userMessageRitual = buildRitualUserMessage(reportParams)
 
     const openaiPlanRes = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -316,7 +365,6 @@ Deno.serve(async (req: Request) => {
 
     const content = assembleSupervisedReportContent(reportOnlyRaw, ritualOnlyRaw, planOnlyRaw)
     const sections = parseReportSections(content)
-    const reportDb = buildReportDbFields(parseReportSubsections(reportOnlyRaw), reportOnlyRaw)
     const ritualDb = buildRitualDbFields(parseRitualSubsections(ritualOnlyRaw), ritualOnlyRaw)
 
     const row = {

@@ -8,6 +8,7 @@ import {
   assembleRitualFromParts,
   assembleSupervisedReportContent,
   buildPlan18UserMessage,
+  buildPlan18UserMessageWithSelections,
   buildReportAndFinalDelimitedContent,
   buildReportDbFields,
   buildRitualDbFields,
@@ -108,10 +109,16 @@ Deno.serve(async (req: Request) => {
       assessment_id?: string
       force?: boolean
       scrap_and_regenerate?: boolean
+      /** When true the caller is the client themselves (after payment); skip therapist-link check. */
+      client_initiated?: boolean
+      /** Pre-selected activities for 1-on-1 plan (18 entries keyed by week number). */
+      selected_activities?: Record<string, { activity_name: string; zone: string; corner: string }>
     }
     const assessmentId = body.assessment_id
     const forceRegenerate = body.force === true
     const scrapAndRegenerate = body.scrap_and_regenerate === true
+    const clientInitiated = body.client_initiated === true
+    const selectedActivities = body.selected_activities ?? null
     if (!assessmentId || typeof assessmentId !== 'string') {
       return new Response(JSON.stringify({ error: 'assessment_id required' }), {
         status: 400,
@@ -151,10 +158,25 @@ Deno.serve(async (req: Request) => {
       .maybeSingle()
 
     if (!link) {
-      return new Response(JSON.stringify({ error: 'Not assigned to this client' }), {
-        status: 403,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      // Allow paid clients to trigger their own plan generation (e.g., after Razorpay checkout).
+      if (clientInitiated && user.id === assessment.client_id) {
+        const { data: clientProfile } = await admin
+          .from('profiles')
+          .select('is_paid_customer')
+          .eq('id', user.id)
+          .maybeSingle()
+        if (!clientProfile?.is_paid_customer) {
+          return new Response(JSON.stringify({ error: 'Plan activation requires a paid account' }), {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          })
+        }
+      } else {
+        return new Response(JSON.stringify({ error: 'Not assigned to this client' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
     }
 
     const { data: reportRow, error: rErr } = await admin
@@ -277,7 +299,9 @@ Deno.serve(async (req: Request) => {
         : null,
     }
 
-    const userMessagePlan = buildPlan18UserMessage(reportParams)
+    const userMessagePlan = selectedActivities
+      ? buildPlan18UserMessageWithSelections(reportParams, selectedActivities)
+      : buildPlan18UserMessage(reportParams)
     const userMessageRitual = buildRitualUserMessage(reportParams)
 
     const contentStr = (reportRow.content as string) || ''

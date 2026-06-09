@@ -4,6 +4,7 @@ import { CalendarDays, ChevronDown, ClipboardPenLine, Download, Loader2, Refresh
 import { toast } from 'sonner'
 import { PlanChecklist } from '@/components/PlanChecklist'
 import { PlanTimeline } from '@/components/PlanTimeline'
+import { PlanSelectionCards } from '@/components/PlanSelectionCards'
 import { PracticeDisclaimerDialog } from '@/components/PracticeDisclaimerDialog'
 import { RitualSectionsView } from '@/components/RitualSectionsView'
 import { resolveRitualDisplayParts } from '@/lib/resolveReportSections'
@@ -24,7 +25,7 @@ function formatReassessDate(d: Date): string {
 }
 
 export function ClientPlanPage() {
-  const { user, profile } = useAuth()
+  const { user, profile, refetchProfile } = useAuth()
   useClientOnboarding() // keep provider subscription
   const availability = useAssessmentAvailability()
   const [loading, setLoading] = useState(true)
@@ -371,11 +372,25 @@ export function ClientPlanPage() {
                     ) : (
                       <PlanTimeline html={planContent} />
                     )
-                  ) : (
+                  ) : profile?.is_paid_customer ? (
                     <p className="py-8 text-center text-muted-foreground">
-                      Your 18-week timeline will appear here once your therapist adds a plan, or when a supervised
-                      report with a plan is finalized.
+                      Your 18-week plan is being generated — check back in a few minutes, or refresh the page.
                     </p>
+                  ) : (
+                    <div className="space-y-5 py-4">
+                      <p className="text-sm text-muted-foreground">
+                        Your personalised 18-week Zen Garden activity plan is generated when you activate a paid plan.
+                      </p>
+                      <PlanSelectionCards
+                        currentPlan={profile?.current_plan}
+                        visiblePlans={['18_week_semi_guided', 'one_on_one_intensive']}
+                        onPlanPurchased={() => {
+                          refetchProfile()
+                          void load()
+                          toast.success('Plan activated! Your 18-week plan is being generated.')
+                        }}
+                      />
+                    </div>
                   )}
                 </div>
               </div>
@@ -448,13 +463,20 @@ export function ClientPlanPage() {
               Your Personalized Plan
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4 text-muted-foreground">
+          <CardContent className="space-y-6 text-muted-foreground">
             <p className="text-pretty leading-relaxed">
-              Ready to begin your wellness journey?<br /><br />Reach out to us at{' '}
-              <a href="tel:+917259294992" className="font-medium text-foreground underline decoration-sky-400/50 underline-offset-2">
-                +91 7259294992
-              </a>, or visit your nearest Zen Garden with your self-assessment report to unlock your personalised 18-week plan and fourfold Zen ritual.<br /><br />We&apos;d love to hear from you soon.
+              Complete your self-assessment first, then activate a plan to unlock your personalised 18-week Zen Garden
+              activity plan and full Fourfold Zen Ritual.
             </p>
+            <PlanSelectionCards
+              currentPlan={profile?.current_plan}
+              visiblePlans={['18_week_semi_guided', 'one_on_one_intensive']}
+              onPlanPurchased={() => {
+                refetchProfile()
+                void load()
+                toast.success('Plan activated!')
+              }}
+            />
           </CardContent>
         </Card>
       )}

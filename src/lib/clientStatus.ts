@@ -1,5 +1,5 @@
 /** Lifecycle labels shown to therapists on the clients list and detail pages. */
-export type ClientStatusLabel = 'new_user' | 'lead' | 'pro' | 'contacted' | 'dropped'
+export type ClientStatusLabel = 'new_user' | 'lead' | 'pro' | 'contacted' | 'dropped' | 'stopped_pro'
 
 export type ClientStatusInputs = {
   /** Therapist-set manual status stored on profiles.client_status */
@@ -15,6 +15,7 @@ export type ClientStatusInputs = {
  *
  * Manual statuses take priority over derived ones.
  * 'pro' wins if either client_status === 'pro' OR is_paid_customer is true.
+ * 'stopped_pro' is a former paid client whose access has been revoked.
  */
 export function computeClientStatus({
   clientStatus,
@@ -23,6 +24,7 @@ export function computeClientStatus({
 }: ClientStatusInputs): ClientStatusLabel {
   if (clientStatus === 'contacted') return 'contacted'
   if (clientStatus === 'dropped') return 'dropped'
+  if (clientStatus === 'stopped_pro') return 'stopped_pro'
   if (clientStatus === 'pro' || isPaidCustomer === true) return 'pro'
   if (hasCompletedSelfAssessment) return 'lead'
   return 'new_user'
@@ -59,6 +61,11 @@ export const CLIENT_STATUS_META: Record<ClientStatusLabel, ClientStatusMeta> = {
     label: 'Dropped',
     badgeClass:
       'border-rose-400/30 bg-rose-500/15 text-rose-200',
+  },
+  stopped_pro: {
+    label: 'Stopped Pro',
+    badgeClass:
+      'border-amber-400/30 bg-amber-500/15 text-amber-200',
   },
 }
 

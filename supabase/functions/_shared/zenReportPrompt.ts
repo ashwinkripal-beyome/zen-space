@@ -683,6 +683,38 @@ ZEN GARDEN ACTIVITY DATASET (USE ONLY THESE ACTIVITIES):
 ${formatActivitiesDataset()}`
 }
 
+/**
+ * User message for 1-on-1 plan generation where the therapist has pre-selected
+ * exactly one activity per week. The model must use these exact activities and
+ * write personalised explanations for each, following the same HTML structure.
+ */
+export function buildPlan18UserMessageWithSelections(
+  p: ReportDataParams,
+  selections: Record<string, { activity_name: string; zone: string; corner: string }>
+): string {
+  const weekLines = Array.from({ length: 18 }, (_, i) => {
+    const week = i + 1
+    const sel = selections[String(week)]
+    if (!sel) return `Week ${week}: (no activity selected)`
+    return `Week ${week}: ${sel.activity_name} | Zone: ${sel.zone} | Corner: ${sel.corner}`
+  }).join('\n')
+
+  return `Create the 18-week personalised Zen Garden plan for this client. Follow your system instructions exactly.
+
+IMPORTANT — 1-ON-1 INTENSIVE PLAN:
+The therapist has hand-selected one specific activity for each of the 18 weeks.
+You MUST use EXACTLY these activities in the order listed — do not substitute, swap, or add any other activities.
+Write personalised 2–3 line explanations for each activity as you normally would.
+
+THERAPIST-SELECTED WEEKLY ACTIVITIES:
+${weekLines}
+
+${buildClientDataBlock(p)}
+
+ZEN GARDEN ACTIVITY DATASET (for reference only — use the selections above, not this dataset):
+${formatActivitiesDataset()}`
+}
+
 // ---------------------------------------------------------------------------
 // Format the activities dataset as structured text for the prompt
 // ---------------------------------------------------------------------------

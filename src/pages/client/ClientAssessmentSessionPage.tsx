@@ -404,7 +404,7 @@ export function ClientAssessmentSessionPage() {
   const reviewPath = `/app/client/assessment/${mode}/review`
   const hasCompanySelection =
     profile?.company_not_listed === true || Boolean(profile?.company_department_id)
-  const needsCompanyPrompt = isSelf && !hasCompanySelection
+  const needsCompanyPrompt = !hasCompanySelection
 
   const sessionReady = !booting && Boolean(user?.id)
   const staggerVisible = usePageStaggerVisible(sessionReady, `${phase}-${assessmentId ?? ''}`)
