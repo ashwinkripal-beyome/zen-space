@@ -1,31 +1,35 @@
+import type { ComponentType } from 'react'
+import {
+  Brain,
+  Compass,
+  Moon,
+  Sparkles,
+  Sprout,
+  Waves,
+  type LucideProps,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ReportBody } from '@/components/ReportBody'
 import type { ReportDisplayPart } from '@/lib/resolveReportSections'
 
-/** Gradient header bar colour per ritual step */
-const RITUAL_BAR: Record<string, string> = {
-  explain: 'bg-gradient-to-r from-[#5198ca] via-[#3398ca] to-[#337cca]',
-  somatic: 'bg-gradient-to-r from-[#1f3168] via-[#374f97] to-[#283f84]',
-  mental:  'bg-gradient-to-r from-[#5e2244] via-[#8b3a6a] to-[#6b2e52]',
-  daily:   'bg-gradient-to-r from-[#1a4a3a] via-[#2d6b52] to-[#1f5742]',
-  reflect: 'bg-gradient-to-r from-[#2d4795] via-[#374f97] to-[#1f3168]',
-  legacy:  'bg-gradient-to-r from-[#5198ca] via-[#3398ca] to-[#337cca]',
-}
-const DEFAULT_RITUAL_BAR = 'bg-gradient-to-r from-[#5198ca] via-[#3398ca] to-[#337cca]'
-
-/** Left-border accent tint on the body per ritual step */
-const RITUAL_BODY_BORDER: Record<string, string> = {
-  somatic: 'border-l-2 border-[#374f97]',
-  mental:  'border-l-2 border-[#8b3a6a]',
-  daily:   'border-l-2 border-[#2d6b52]',
-  reflect: 'border-l-2 border-[#374f97]',
+/**
+ * One calm accent family (the app's violet/blue primary) across every step.
+ * Steps are told apart by their icon and step number, not by colour.
+ */
+const RITUAL_ICON: Record<string, ComponentType<LucideProps>> = {
+  explain: Compass,
+  somatic: Waves,
+  mental: Brain,
+  daily: Sprout,
+  reflect: Moon,
+  legacy: Sparkles,
 }
 
-/** Step number badge (empty string = no badge) */
+/** Step number badge for the four ritual steps (explain/legacy have none). */
 const RITUAL_STEP: Record<string, string> = {
   somatic: '1',
-  mental:  '2',
-  daily:   '3',
+  mental: '2',
+  daily: '3',
   reflect: '4',
 }
 
@@ -41,33 +45,57 @@ export function RitualSectionsView({
   }
 
   return (
-    <div className={className ?? 'space-y-3'}>
+    <div className={className ?? 'space-y-4'}>
       {parts.map(part => {
         const step = RITUAL_STEP[part.id]
-        const headerBar = RITUAL_BAR[part.id] ?? DEFAULT_RITUAL_BAR
-        const bodyBorder = RITUAL_BODY_BORDER[part.id] ?? ''
+        const Icon = RITUAL_ICON[part.id] ?? Sparkles
+        const isFoundation = part.id === 'explain'
 
         return (
           <section
             key={part.id}
-            className="overflow-hidden rounded-xl border border-white/10 bg-white/[0.02]"
+            className={cn(
+              'overflow-hidden rounded-2xl zen-glass-card',
+              isFoundation ? 'zen-ring-primary' : 'zen-ring-secondary'
+            )}
           >
-            {/* Gradient header bar */}
+            {/* Foundation step gets a thin accent bar to anchor the ritual */}
+            {isFoundation && (
+              <div className="h-1 w-full bg-gradient-to-r from-[#5198ca] via-[#3398ca] to-[#337cca]" />
+            )}
+
             {part.id !== 'legacy' ? (
-              <div className={cn('flex items-center gap-2.5 px-4 py-2.5', headerBar)}>
-                {step && (
-                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/20 text-[10px] font-bold text-white">
-                    {step}
-                  </span>
-                )}
-                <h2 className="text-xs font-semibold uppercase tracking-widest text-white/95">
-                  {part.title}
-                </h2>
-              </div>
+              <header className="flex items-center gap-3 border-b border-white/10 px-5 py-3.5">
+                <span
+                  className={cn(
+                    'relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl',
+                    isFoundation
+                      ? 'bg-gradient-to-br from-[#5198ca] to-[#337cca] text-white shadow-sm'
+                      : 'bg-[rgb(167_139_250/0.14)] text-violet-200'
+                  )}
+                >
+                  <Icon className="size-[18px]" aria-hidden />
+                  {step && (
+                    <span className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#337cca] text-[9px] font-bold text-white ring-2 ring-black/40">
+                      {step}
+                    </span>
+                  )}
+                </span>
+                <div className="min-w-0">
+                  {step && (
+                    <span className="block text-[10px] font-medium uppercase tracking-widest text-violet-300/80">
+                      Step {step}
+                    </span>
+                  )}
+                  <h2 className="truncate text-sm font-semibold tracking-wide text-foreground">
+                    {part.title}
+                  </h2>
+                </div>
+              </header>
             ) : null}
 
             {/* Step body */}
-            <div className={cn('px-5 py-4', bodyBorder)}>
+            <div className="px-5 py-4">
               <ReportBody content={part.html} />
             </div>
           </section>

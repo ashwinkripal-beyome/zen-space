@@ -10,3 +10,8 @@ verify_jwt = false
 
 [functions.generate-zen-plan]
 verify_jwt = false
+
+# Send SMS Auth Hook (delivers phone OTP over WhatsApp). Called by GoTrue, not a
+# user JWT — it authenticates via the Standard-Webhooks signature (SEND_SMS_HOOK_SECRET).
+[functions.whatsapp-send-otp]
+verify_jwt = false

@@ -9,6 +9,21 @@ export type CompanyWithDepartments = {
   id: string
   name: string
   departments: CompanyDepartmentRow[]
+  /** Count of client profiles linked to any of this company's departments. */
+  memberCount: number
+}
+
+export type CompanyMember = {
+  id: string
+  email: string
+  name: string | null
+  firstName: string | null
+  lastName: string | null
+  gender: string | null
+  age: number | null
+  clientStatus: string | null
+  departmentId: string | null
+  departmentName: string | null
 }
 
 function normaliseCompanyName(name: string): string {
@@ -17,9 +32,10 @@ function normaliseCompanyName(name: string): string {
 
 /** Fetch all companies plus their departments, alphabetised. */
 export async function fetchCompaniesWithDepartments(): Promise<CompanyWithDepartments[]> {
-  const [companiesResult, departmentsResult] = await Promise.all([
+  const [companiesResult, departmentsResult, countsResult] = await Promise.all([
     supabase.from('companies').select('id, name').order('name', { ascending: true }),
     supabase.from('company_departments').select('id, company_id, name').order('name', { ascending: true }),
+    supabase.rpc('company_member_counts'),
   ])
 
   if (companiesResult.error) {
@@ -29,6 +45,10 @@ export async function fetchCompaniesWithDepartments(): Promise<CompanyWithDepart
   if (departmentsResult.error) {
     console.error('[company_departments select]', departmentsResult.error)
     throw new Error(departmentsResult.error.message)
+  }
+  if (countsResult.error) {
+    // Non-fatal: fall back to zero counts rather than blocking the whole page.
+    console.error('[company_member_counts]', countsResult.error)
   }
 
   const byCompany = new Map<string, CompanyDepartmentRow[]>()
@@ -42,10 +62,45 @@ export async function fetchCompaniesWithDepartments(): Promise<CompanyWithDepart
     byCompany.set(cid, arr)
   }
 
-  return (companiesResult.data ?? []).map(c => ({
-    id: String((c as { id: string }).id),
-    name: String((c as { name: string }).name),
-    departments: byCompany.get(String((c as { id: string }).id)) ?? [],
+  const countByCompany = new Map<string, number>()
+  for (const row of (countsResult.data ?? []) as { company_id: string; member_count: number }[]) {
+    countByCompany.set(String(row.company_id), Number(row.member_count) || 0)
+  }
+
+  return (companiesResult.data ?? []).map(c => {
+    const cid = String((c as { id: string }).id)
+    return {
+      id: cid,
+      name: String((c as { name: string }).name),
+      departments: byCompany.get(cid) ?? [],
+      memberCount: countByCompany.get(cid) ?? 0,
+    }
+  })
+}
+
+/** Read-only roster of client profiles linked to a company's departments. */
+export async function fetchCompanyMembers(companyId: string): Promise<CompanyMember[]> {
+  const { data, error } = await supabase.rpc('list_company_members', {
+    p_company_id: companyId,
+  })
+
+  if (error) {
+    console.error('[list_company_members]', error)
+    throw new Error(error.message)
+  }
+
+  return ((data ?? []) as Record<string, unknown>[]).map(row => ({
+    id: String(row.id),
+    email: String(row.email ?? ''),
+    name: (row.name as string | null) ?? null,
+    firstName: (row.first_name as string | null) ?? null,
+    lastName: (row.last_name as string | null) ?? null,
+    gender: (row.gender as string | null) ?? null,
+    age:
+      row.age != null && Number.isFinite(Number(row.age)) ? Number(row.age) : null,
+    clientStatus: (row.client_status as string | null) ?? null,
+    departmentId: (row.department_id as string | null) ?? null,
+    departmentName: (row.department_name as string | null) ?? null,
   }))
 }
 

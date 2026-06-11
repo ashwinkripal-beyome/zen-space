@@ -1,6 +1,16 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ComponentType } from 'react'
 import { Link } from 'react-router-dom'
-import { CalendarDays, ChevronDown, ClipboardPenLine, Download, Loader2, RefreshCw } from 'lucide-react'
+import {
+  CalendarDays,
+  CalendarRange,
+  ChevronDown,
+  ClipboardPenLine,
+  Download,
+  Loader2,
+  RefreshCw,
+  Sparkles,
+  type LucideProps,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { PlanChecklist } from '@/components/PlanChecklist'
 import { PlanTimeline } from '@/components/PlanTimeline'
@@ -22,6 +32,62 @@ import { cn } from '@/lib/utils'
 
 function formatReassessDate(d: Date): string {
   return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+/**
+ * Collapsible section header for the plan page — mirrors the report-section
+ * card style (icon chip + title on a frosted glass surface). The ritual uses
+ * the app's violet/blue accent; the 18-week plan uses a subtle emerald chip to
+ * tie into the green timeline below.
+ */
+function PlanSectionToggle({
+  icon: Icon,
+  title,
+  subtitle,
+  expanded,
+  onClick,
+  accent,
+}: {
+  icon: ComponentType<LucideProps>
+  title: string
+  subtitle: string
+  expanded: boolean
+  onClick: () => void
+  accent: 'violet' | 'emerald'
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-expanded={expanded}
+      className={cn(
+        'group flex w-full items-center gap-3 rounded-xl px-4 py-3.5 text-left transition-colors',
+        'zen-glass-card zen-ring-secondary hover:bg-white/[0.08]'
+      )}
+    >
+      <span
+        className={cn(
+          'flex size-10 shrink-0 items-center justify-center rounded-xl',
+          accent === 'emerald'
+            ? 'bg-emerald-500/15 text-emerald-200'
+            : 'bg-[rgb(167_139_250/0.14)] text-violet-200'
+        )}
+      >
+        <Icon className="size-5" aria-hidden />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-base font-semibold text-foreground">{title}</span>
+        <span className="block text-xs text-muted-foreground">{subtitle}</span>
+      </span>
+      <ChevronDown
+        className={cn(
+          'size-5 shrink-0 text-muted-foreground transition-transform duration-300 ease-out',
+          expanded && 'rotate-180'
+        )}
+        aria-hidden
+      />
+    </button>
+  )
 }
 
 export function ClientPlanPage() {
@@ -318,21 +384,14 @@ export function ClientPlanPage() {
           >
             <CardContent className="px-3 pt-6 md:px-6">
               <div>
-                <button
-                  type="button"
+                <PlanSectionToggle
+                  icon={Sparkles}
+                  title="Fourfold Zen Ritual"
+                  subtitle="Your daily fourfold practice"
+                  accent="violet"
+                  expanded={ritualExpanded}
                   onClick={toggleRitualSection}
-                  className="flex w-full items-center justify-between gap-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-left transition-colors hover:bg-white/10"
-                  aria-expanded={ritualExpanded}
-                >
-                  <span className="text-base font-semibold text-foreground">Fourfold Zen Ritual</span>
-                  <ChevronDown
-                    className={cn(
-                      'size-5 shrink-0 text-muted-foreground transition-transform',
-                      ritualExpanded && 'rotate-180',
-                    )}
-                    aria-hidden
-                  />
-                </button>
+                />
                 <div className={cn('mt-4 px-0.5', !ritualExpanded && 'hidden')} aria-hidden={!ritualExpanded}>
                   {ritualDisplayParts.length > 0 ? (
                     <RitualSectionsView parts={ritualDisplayParts} />
@@ -345,21 +404,14 @@ export function ClientPlanPage() {
               </div>
 
               <div className="mt-8 border-t border-white/10 pt-6">
-                <button
-                  type="button"
+                <PlanSectionToggle
+                  icon={CalendarRange}
+                  title="18-Week Plan"
+                  subtitle="Your Zen Garden journey, week by week"
+                  accent="emerald"
+                  expanded={planExpanded}
                   onClick={togglePlanSection}
-                  className="flex w-full items-center justify-between gap-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-left transition-colors hover:bg-white/10"
-                  aria-expanded={planExpanded}
-                >
-                  <span className="text-base font-semibold text-foreground">18-Week Plan</span>
-                  <ChevronDown
-                    className={cn(
-                      'size-5 shrink-0 text-muted-foreground transition-transform',
-                      planExpanded && 'rotate-180',
-                    )}
-                    aria-hidden
-                  />
-                </button>
+                />
                 <div className={cn('mt-4', !planExpanded && 'hidden')} aria-hidden={!planExpanded}>
                   {planContent ? (
                     user?.id && reportId ? (

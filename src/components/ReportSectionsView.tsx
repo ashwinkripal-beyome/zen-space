@@ -1,26 +1,39 @@
+import type { ComponentType } from 'react'
+import {
+  Activity,
+  ClipboardList,
+  Compass,
+  FileText,
+  Flower2,
+  Layers,
+  Scale,
+  Sparkles,
+  UserRound,
+  type LucideProps,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ReportBody } from '@/components/ReportBody'
 import type { ReportDisplayPart } from '@/lib/resolveReportSections'
 
-/** Gradient header bar per section type */
-const ZONE_BAR: Record<string, string> = {
-  balanceZone: 'bg-gradient-to-r from-[#1f3168] via-[#374f97] to-[#283f84]',
-  blossomZone: 'bg-gradient-to-r from-[#5e2244] via-[#8b3a6a] to-[#6b2e52]',
-  blissZone:   'bg-gradient-to-r from-[#1a4a3a] via-[#2d6b52] to-[#1f5742]',
-  integrated:  'bg-gradient-to-r from-[#2d4795] via-[#374f97] to-[#1f3168]',
-  final:       'bg-gradient-to-r from-[#2d4795] via-[#374f97] to-[#1f3168]',
+/**
+ * One calm accent family (the app's violet/blue primary) across every section.
+ * Sections are told apart by their icon, not by colour. The client-info card
+ * gets an elevated "profile card" treatment so it reads as a card, not a text box.
+ */
+const SECTION_ICON: Record<string, ComponentType<LucideProps>> = {
+  clientInfo: UserRound,
+  keyConcerns: ClipboardList,
+  currentState: Activity,
+  balanceZone: Scale,
+  blossomZone: Flower2,
+  blissZone: Sparkles,
+  integrated: Layers,
+  final: Compass,
+  legacy: FileText,
 }
-const DEFAULT_BAR = 'bg-gradient-to-r from-[#5198ca] via-[#3398ca] to-[#337cca]'
 
-/** Subtle left-border tint on the body for zone sections */
-const ZONE_BODY_BORDER: Record<string, string> = {
-  balanceZone: 'border-l-2 border-[#374f97]',
-  blossomZone: 'border-l-2 border-[#8b3a6a]',
-  blissZone:   'border-l-2 border-[#2d6b52]',
-}
-
-function barClass(id: string) {
-  return ZONE_BAR[id] ?? DEFAULT_BAR
+function iconFor(id: string): ComponentType<LucideProps> {
+  return SECTION_ICON[id] ?? FileText
 }
 
 export function ReportSectionsView({
@@ -35,30 +48,58 @@ export function ReportSectionsView({
   }
 
   return (
-    <div className={className ?? 'space-y-3'}>
-      {parts.map(part => (
-        <section
-          key={part.id}
-          className="overflow-hidden rounded-xl border border-white/10 bg-white/[0.02]"
-        >
-          {/* Gradient header bar */}
-          <div className={cn('px-4 py-2.5', barClass(part.id))}>
-            <h2 className="text-xs font-semibold uppercase tracking-widest text-white/95">
-              {part.title}
-            </h2>
-          </div>
+    <div className={className ?? 'space-y-4'}>
+      {parts.map(part => {
+        const Icon = iconFor(part.id)
+        const isHero = part.id === 'clientInfo'
 
-          {/* Section body */}
-          <div
+        return (
+          <section
+            key={part.id}
             className={cn(
-              'px-5 py-4',
-              ZONE_BODY_BORDER[part.id]
+              'overflow-hidden rounded-2xl zen-glass-card',
+              isHero ? 'zen-ring-primary' : 'zen-ring-secondary'
             )}
           >
-            <ReportBody content={part.html} />
-          </div>
-        </section>
-      ))}
+            {/* Thin accent bar on the hero (client) card only */}
+            {isHero && (
+              <div className="h-1 w-full bg-gradient-to-r from-[#5198ca] via-[#3398ca] to-[#337cca]" />
+            )}
+
+            {/* Section header — icon chip + title, one accent throughout */}
+            <header
+              className={cn(
+                'flex items-center gap-3 border-b border-white/10 px-5',
+                isHero ? 'py-4' : 'py-3.5'
+              )}
+            >
+              <span
+                className={cn(
+                  'flex shrink-0 items-center justify-center rounded-xl',
+                  isHero
+                    ? 'h-10 w-10 bg-gradient-to-br from-[#5198ca] to-[#337cca] text-white shadow-sm'
+                    : 'h-9 w-9 bg-[rgb(167_139_250/0.14)] text-violet-200'
+                )}
+              >
+                <Icon className={isHero ? 'size-5' : 'size-[18px]'} aria-hidden />
+              </span>
+              <h2
+                className={cn(
+                  'font-semibold text-foreground',
+                  isHero ? 'text-base' : 'text-sm tracking-wide'
+                )}
+              >
+                {part.title}
+              </h2>
+            </header>
+
+            {/* Section body */}
+            <div className="px-5 py-4">
+              <ReportBody content={part.html} />
+            </div>
+          </section>
+        )
+      })}
     </div>
   )
 }

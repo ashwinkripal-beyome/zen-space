@@ -13,6 +13,8 @@ import {
   sidebarNavLinkClassName,
 } from '@/components/layout/AppShell'
 import { Button } from '@/components/ui/button'
+import { ClientConsentGate } from '@/components/ClientConsentGate'
+import { ClientPhoneVerificationGate } from '@/components/ClientPhoneVerificationGate'
 import { useAuth } from '@/hooks/useAuth'
 import { PLAN_META, isPaidTier } from '@/lib/planTiers'
 import { cn } from '@/lib/utils'
@@ -112,6 +114,8 @@ export function ClientLayout() {
 
   return (
     <div className="relative h-[100dvh] min-h-0 overflow-hidden print:h-auto print:min-h-0 print:overflow-visible">
+      <ClientPhoneVerificationGate />
+      <ClientConsentGate />
       <MobileNavLayer
         open={mobileNavOpen}
         onClose={closeMobileNav}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Building2, Loader2, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { Building2, Loader2, Pencil, Plus, Trash2, Users, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -14,10 +14,13 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { pageStaggerItemStyle, usePageStaggerVisible } from '@/hooks/usePageStaggerVisible'
+import { formatAgeDisplay, formatClientDisplayName, formatGenderLabel } from '@/lib/clientDisplayName'
 import {
   deleteCompany,
   fetchCompaniesWithDepartments,
+  fetchCompanyMembers,
   upsertCompanyWithDepartments,
+  type CompanyMember,
   type CompanyWithDepartments,
 } from '@/lib/companyDirectory'
 import { cn } from '@/lib/utils'
@@ -64,6 +67,10 @@ export function TherapistManageCompaniesPage() {
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
 
+  const [membersCompany, setMembersCompany] = useState<CompanyWithDepartments | null>(null)
+  const [members, setMembers] = useState<CompanyMember[]>([])
+  const [membersLoading, setMembersLoading] = useState(false)
+
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
     try {
@@ -97,6 +104,21 @@ export function TherapistManageCompaniesPage() {
   const openEdit = (company: CompanyWithDepartments) => {
     setEditor(editorFromCompany(company))
     setEditorOpen(true)
+  }
+
+  const openMembers = async (company: CompanyWithDepartments) => {
+    setMembersCompany(company)
+    setMembers([])
+    setMembersLoading(true)
+    try {
+      const rows = await fetchCompanyMembers(company.id)
+      setMembers(rows)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to load company members'
+      toast.error(message)
+    } finally {
+      setMembersLoading(false)
+    }
   }
 
   const addDepartmentChip = () => {
@@ -237,15 +259,30 @@ export function TherapistManageCompaniesPage() {
                     )}
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-lg font-semibold tracking-tight text-foreground">
+                      <button
+                        type="button"
+                        onClick={() => void openMembers(company)}
+                        className={cn(
+                          'group min-w-0 flex-1 rounded-lg text-left',
+                          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(167_139_250/0.45)]'
+                        )}
+                        aria-label={`View clients in ${company.name}`}
+                      >
+                        <p className="truncate text-lg font-semibold tracking-tight text-foreground group-hover:underline">
                           {company.name}
                         </p>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          {company.departments.length} department
-                          {company.departments.length === 1 ? '' : 's'}
+                        <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+                          <span className="inline-flex items-center gap-1">
+                            <Users className="size-3.5" aria-hidden />
+                            {company.memberCount} member{company.memberCount === 1 ? '' : 's'}
+                          </span>
+                          <span aria-hidden>·</span>
+                          <span>
+                            {company.departments.length} department
+                            {company.departments.length === 1 ? '' : 's'}
+                          </span>
                         </p>
-                      </div>
+                      </button>
                       <div className="flex shrink-0 items-center gap-1.5">
                         <Button
                           type="button"
@@ -466,6 +503,111 @@ export function TherapistManageCompaniesPage() {
               ) : (
                 'Delete company'
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={membersCompany !== null}
+        onOpenChange={open => {
+          if (!open) {
+            setMembersCompany(null)
+            setMembers([])
+          }
+        }}
+      >
+        <DialogContent className="zen-glass-card max-h-[85vh] overflow-hidden rounded-2xl border-white/15 text-foreground sm:max-w-lg">
+          <DialogHeader>
+            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Clients · read only
+            </p>
+            <DialogTitle className="text-foreground">
+              {membersCompany ? membersCompany.name : 'Company clients'}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="-mr-2 max-h-[60vh] space-y-2 overflow-y-auto pr-2">
+            {membersLoading ? (
+              <div className="flex items-center justify-center gap-3 py-12 text-muted-foreground">
+                <Loader2 className="size-5 animate-spin" aria-hidden />
+                <span className="text-sm">Loading clients…</span>
+              </div>
+            ) : members.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
+                <div className="rounded-full bg-white/5 p-5 ring-1 ring-white/10">
+                  <Users className="size-8 text-muted-foreground" aria-hidden />
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  No clients are linked to this company yet.
+                </p>
+              </div>
+            ) : (
+              <ul className="space-y-2">
+                {members.map(member => {
+                  const displayName = formatClientDisplayName({
+                    email: member.email,
+                    name: member.name,
+                    first_name: member.firstName,
+                    last_name: member.lastName,
+                  })
+                  const showEmailLine = member.email && member.email !== displayName
+                  return (
+                    <li
+                      key={member.id}
+                      className="rounded-xl border border-white/12 bg-white/[0.05] p-3.5 ring-1 ring-white/5"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-foreground">
+                            {displayName}
+                          </p>
+                          {showEmailLine ? (
+                            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                              {member.email}
+                            </p>
+                          ) : null}
+                        </div>
+                        {member.departmentName ? (
+                          <Badge
+                            variant="outline"
+                            className="shrink-0 border-white/15 bg-white/[0.04] text-xs text-foreground/90"
+                          >
+                            {member.departmentName}
+                          </Badge>
+                        ) : null}
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        <span className="rounded-lg bg-white/[0.06] px-2 py-0.5 ring-1 ring-white/10">
+                          <span className="text-muted-foreground">Gender</span>{' '}
+                          <span className="font-medium text-foreground/90">
+                            {formatGenderLabel(member.gender)}
+                          </span>
+                        </span>
+                        <span className="rounded-lg bg-white/[0.06] px-2 py-0.5 ring-1 ring-white/10">
+                          <span className="text-muted-foreground">Age</span>{' '}
+                          <span className="font-medium text-foreground/90">
+                            {formatAgeDisplay(member.age)}
+                          </span>
+                        </span>
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="zenOutline"
+              onClick={() => {
+                setMembersCompany(null)
+                setMembers([])
+              }}
+            >
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -38,6 +38,10 @@ export interface Profile {
   client_status?: string | null
   /** True once a new client has been redirected to Assessments on first login. */
   client_initial_login_redirect_done?: boolean
+  /** Client: when they accepted the informed-consent agreement; null/undefined = not yet consented. */
+  consent_given_at?: string | null
+  /** Client: when they verified ownership of their WhatsApp number via OTP; null/undefined = not yet verified. */
+  phone_verified_at?: string | null
   /** Present on rows from `profiles` select; used to detect refetched data. */
   updated_at?: string
 }
@@ -65,9 +69,31 @@ type AuthContextValue = AuthState & {
   signOut: () => Promise<void>
   refetchProfile: () => void
   resetPasswordForEmail: (email: string) => Promise<{ error: null | { message: string } }>
+  /** True once the client's WhatsApp number is confirmed (via OTP) on this account. */
+  phoneVerified: boolean
+  /** Send a WhatsApp OTP to `phone` (E.164) via Supabase's phone-change flow. */
+  startPhoneVerification: (phone: string) => Promise<{ error: null | { message: string } }>
+  /** Confirm the WhatsApp OTP for `phone`; on success the phone is bound to this account. */
+  confirmPhoneVerification: (
+    phone: string,
+    token: string
+  ) => Promise<{ error: null | { message: string } }>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
+
+/**
+ * Normalize a user-entered phone to E.164 (`+` + digits) as Supabase Auth expects.
+ * A bare 10-digit number (no country code) is assumed to be Indian (+91), since
+ * that's this app's audience; numbers that already include a country code are
+ * left as-is.
+ */
+function toE164(phone: string): string {
+  let digits = phone.replace(/[^\d]/g, '')
+  if (!digits) return ''
+  if (digits.length === 10) digits = `91${digits}`
+  return `+${digits}`
+}
 
 function roleFromAuthUser(user: User): Profile['role'] {
   const r = user.user_metadata?.role ?? user.app_metadata?.role
@@ -282,6 +308,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfileTick(t => t + 1)
   }, [])
 
+  const startPhoneVerification = useCallback(async (phone: string) => {
+    const e164 = toE164(phone)
+    if (!e164) return { error: { message: 'Enter a valid phone number.' } }
+    // Updating the phone on the signed-in user triggers GoTrue's phone-change
+    // OTP, delivered over WhatsApp by the whatsapp-send-otp Send-SMS hook.
+    const { error } = await supabase.auth.updateUser({ phone: e164 })
+    return { error: error ? { message: error.message } : null }
+  }, [])
+
+  const confirmPhoneVerification = useCallback(async (phone: string, token: string) => {
+    const e164 = toE164(phone)
+    if (!e164) return { error: { message: 'Enter a valid phone number.' } }
+    const { error } = await supabase.auth.verifyOtp({
+      phone: e164,
+      token: token.trim(),
+      type: 'phone_change',
+    })
+    return { error: error ? { message: error.message } : null }
+  }, [])
+
+  // Verified once auth confirms the phone (GoTrue) or the synced profile flag is set.
+  const phoneVerified = Boolean(
+    state.profile?.phone_verified_at ||
+      (state.user as (User & { phone_confirmed_at?: string }) | null)?.phone_confirmed_at
+  )
+
   const value = useMemo(
     () => ({
       ...state,
@@ -290,8 +342,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signOut,
       resetPasswordForEmail,
       refetchProfile,
+      phoneVerified,
+      startPhoneVerification,
+      confirmPhoneVerification,
     }),
-    [state, signIn, signUp, signOut, resetPasswordForEmail, refetchProfile]
+    [
+      state,
+      signIn,
+      signUp,
+      signOut,
+      resetPasswordForEmail,
+      refetchProfile,
+      phoneVerified,
+      startPhoneVerification,
+      confirmPhoneVerification,
+    ]
   )
 
   return createElement(AuthContext.Provider, { value }, children)
