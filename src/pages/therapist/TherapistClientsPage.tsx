@@ -8,6 +8,8 @@ import { Input } from '@/components/ui/input'
 import { useAuth } from '@/hooks/useAuth'
 import { pageStaggerItemStyle, usePageStaggerVisible } from '@/hooks/usePageStaggerVisible'
 import { formatAgeDisplay, formatClientDisplayName, formatGenderLabel } from '@/lib/clientDisplayName'
+import { PLAN_META } from '@/lib/planTiers'
+import { formatPackageMonths } from '@/lib/planPackages'
 import {
   ALL_STATUS_LABELS,
   CLIENT_STATUS_META,
@@ -35,6 +37,8 @@ type LinkedClientDisplay = {
   age: number | null
   clientStatus: string | null
   isPaidCustomer: boolean
+  currentPlan: string | null
+  currentPlanMonths: number | null
   hasCompletedSelfAssessment: boolean
   statusLabel: ClientStatusLabel
 }
@@ -50,6 +54,8 @@ type ClientProfileFields = {
   age: number | null
   client_status: string | null
   is_paid_customer: boolean
+  current_plan: string | null
+  current_plan_months: number | null
 }
 
 export function TherapistClientsPage() {
@@ -86,7 +92,7 @@ export function TherapistClientsPage() {
       const [profsResult, assessmentsResult] = await Promise.all([
         supabase
           .from('profiles')
-          .select('id, email, name, first_name, last_name, role, gender, age, client_status, is_paid_customer')
+          .select('id, email, name, first_name, last_name, role, gender, age, client_status, is_paid_customer, current_plan, current_plan_months')
           .in('id', clientIds),
         supabase
           .from('assessments')
@@ -128,6 +134,8 @@ export function TherapistClientsPage() {
             age: p?.age != null && Number.isFinite(Number(p.age)) ? Number(p.age) : null,
             clientStatus: cs,
             isPaidCustomer: paid,
+            currentPlan: typeof p?.current_plan === 'string' ? p.current_plan : null,
+            currentPlanMonths: typeof p?.current_plan_months === 'number' ? p.current_plan_months : null,
             hasCompletedSelfAssessment: hasSelf,
             statusLabel: computeClientStatus({
               clientStatus: cs,
@@ -318,6 +326,16 @@ export function TherapistClientsPage() {
                               <span className="text-muted-foreground">Age</span>{' '}
                               <span className="font-medium text-foreground/90">{formatAgeDisplay(c.age)}</span>
                             </span>
+                            {c.isPaidCustomer && c.currentPlan && c.currentPlan !== 'free' && (
+                              <span className="rounded-lg bg-emerald-500/[0.12] px-2.5 py-1 ring-1 ring-emerald-400/25">
+                                <span className="font-medium text-emerald-100/90">
+                                  {PLAN_META[c.currentPlan as '18_week_semi_guided' | 'one_on_one_intensive']?.label ?? c.currentPlan}
+                                </span>
+                                {c.currentPlanMonths ? (
+                                  <span className="text-emerald-200/70">{' · '}{formatPackageMonths(c.currentPlanMonths)}</span>
+                                ) : null}
+                              </span>
+                            )}
                           </div>
                           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-3">
                             <p className="text-xs text-muted-foreground">

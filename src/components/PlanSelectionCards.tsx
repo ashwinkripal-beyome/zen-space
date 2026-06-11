@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuth } from '@/hooks/useAuth'
 import { type PlanTier, PLAN_META, PAID_TIERS } from '@/lib/planTiers'
+import { PLAN_PACKAGES, type PackageMonths } from '@/lib/planPackages'
 import { startRazorpayCheckout } from '@/lib/razorpay'
 import { generateClientPlanAfterPayment } from '@/lib/generateClientPlan'
 import { cn } from '@/lib/utils'
@@ -26,12 +27,12 @@ export function PlanSelectionCards({
   const { profile, refetchProfile } = useAuth()
   const [checkoutStatus, setCheckoutStatus] = useState<string | null>(null)
   const [checkingOut, setCheckingOut] = useState<PlanTier | null>(null)
+  const [checkingOutMonths, setCheckingOutMonths] = useState<PackageMonths | null>(null)
 
   const activePlan = (currentPlan ?? 'free') as PlanTier
 
-  const handleSelect = async (tier: PlanTier) => {
+  const handleSelect = async (tier: PlanTier, months: PackageMonths) => {
     if (!PAID_TIERS.includes(tier)) return
-    if (tier === activePlan) return
 
     const clientName =
       [profile?.first_name, profile?.last_name].filter(Boolean).join(' ') ||
@@ -41,16 +42,19 @@ export function PlanSelectionCards({
     const clientEmail = profile?.email ?? ''
 
     setCheckingOut(tier)
+    setCheckingOutMonths(months)
     setCheckoutStatus(null)
 
     const result = await startRazorpayCheckout(
       tier as '18_week_semi_guided' | 'one_on_one_intensive',
+      months,
       clientName,
       clientEmail,
       msg => setCheckoutStatus(msg)
     )
 
     setCheckingOut(null)
+    setCheckingOutMonths(null)
     setCheckoutStatus(null)
 
     if (!result.ok) {
@@ -69,6 +73,7 @@ export function PlanSelectionCards({
       setCheckingOut(tier) // keep loading state visible
       const genResult = await generateClientPlanAfterPayment(profile.id, msg => setCheckoutStatus(msg))
       setCheckingOut(null)
+      setCheckingOutMonths(null)
       setCheckoutStatus(null)
       if (!genResult.ok) {
         toast.error(
@@ -113,7 +118,11 @@ export function PlanSelectionCards({
                   {meta.tagline}
                 </div>
                 <CardTitle className="text-xl text-foreground">{meta.label}</CardTitle>
-                <div className="text-2xl font-bold text-foreground">{meta.priceLabel}</div>
+                <div className="text-2xl font-bold text-foreground">
+                  {meta.requiresPayment
+                    ? `From ${PLAN_PACKAGES[tier as '18_week_semi_guided' | 'one_on_one_intensive'][0].priceLabel}`
+                    : meta.priceLabel}
+                </div>
               </CardHeader>
               <CardContent className="flex flex-1 flex-col justify-between gap-4">
                 <ul className="space-y-2">
@@ -126,22 +135,39 @@ export function PlanSelectionCards({
                 </ul>
 
                 {meta.requiresPayment && !isActive && (
-                  <Button
-                    type="button"
-                    variant={tier === '18_week_semi_guided' ? 'zen' : 'zenRose'}
-                    className="w-full"
-                    disabled={isLoading || checkingOut !== null}
-                    onClick={() => void handleSelect(tier)}
-                  >
-                    {isLoading ? (
-                      <>
-                        <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
-                        {checkoutStatus ?? 'Processing…'}
-                      </>
-                    ) : (
-                      `Get ${meta.label}`
-                    )}
-                  </Button>
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                      Choose a package
+                    </p>
+                    {PLAN_PACKAGES[tier as '18_week_semi_guided' | 'one_on_one_intensive'].map(pkg => {
+                      const pkgLoading = isLoading && checkingOutMonths === pkg.months
+                      return (
+                        <Button
+                          key={pkg.months}
+                          type="button"
+                          variant={tier === '18_week_semi_guided' ? 'zen' : 'zenRose'}
+                          className="h-auto w-full justify-between py-2"
+                          disabled={checkingOut !== null}
+                          onClick={() => void handleSelect(tier, pkg.months)}
+                        >
+                          {pkgLoading ? (
+                            <span className="flex w-full items-center justify-center">
+                              <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
+                              {checkoutStatus ?? 'Processing…'}
+                            </span>
+                          ) : (
+                            <>
+                              <span className="flex flex-col items-start leading-tight">
+                                <span className="text-sm font-semibold">{pkg.months} months</span>
+                                <span className="text-[11px] font-normal opacity-80">{pkg.perMonthLabel}</span>
+                              </span>
+                              <span className="text-sm font-bold">{pkg.priceLabel}</span>
+                            </>
+                          )}
+                        </Button>
+                      )
+                    })}
+                  </div>
                 )}
 
                 {!meta.requiresPayment && !isActive && (

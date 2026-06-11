@@ -173,12 +173,7 @@ export function OneOnOneActivitySelector({
 
   return (
     <div className="relative space-y-4">
-      {generating && (
-        <ReportGenerationWaitOverlay
-          variant="plan"
-          onTimeout={() => setGenerating(false)}
-        />
-      )}
+      <ReportGenerationWaitOverlay open={generating} variant="plan" />
 
       <div className="space-y-1">
         <p className="text-sm text-muted-foreground">

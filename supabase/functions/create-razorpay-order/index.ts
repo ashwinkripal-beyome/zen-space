@@ -5,10 +5,32 @@ const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-/** Amount in paise for each plan (override via env vars). */
-const PLAN_AMOUNT_PAISE: Record<string, number> = {
-  '18_week_semi_guided': 0,  // resolved from env below
-  'one_on_one_intensive': 0,
+type PaidPlan = '18_week_semi_guided' | 'one_on_one_intensive'
+
+const VALID_PLANS: PaidPlan[] = ['18_week_semi_guided', 'one_on_one_intensive']
+const VALID_MONTHS = [3, 6, 12]
+
+/**
+ * Resolve the price (in paise) for a plan + duration from Supabase secrets.
+ * Secret names: PLAN_PRICE_SEMI_GUIDED_<N>M_PAISE / PLAN_PRICE_ONE_ON_ONE_<N>M_PAISE.
+ * Defaults below are the launch prices; override them by setting the secrets.
+ */
+const PRICE_DEFAULTS_PAISE: Record<PaidPlan, Record<number, number>> = {
+  '18_week_semi_guided': { 3: 749900, 6: 1199900, 12: 1999900 },
+  'one_on_one_intensive': { 3: 899900, 6: 1499900, 12: 2399900 },
+}
+
+function resolveAmountPaise(plan: PaidPlan, months: number): number {
+  const envKey =
+    plan === '18_week_semi_guided'
+      ? `PLAN_PRICE_SEMI_GUIDED_${months}M_PAISE`
+      : `PLAN_PRICE_ONE_ON_ONE_${months}M_PAISE`
+  const fromEnv = Deno.env.get(envKey)
+  if (fromEnv) {
+    const parsed = parseInt(fromEnv, 10)
+    if (Number.isFinite(parsed) && parsed > 0) return parsed
+  }
+  return PRICE_DEFAULTS_PAISE[plan][months]
 }
 
 type RazorpayOrder = {
@@ -45,12 +67,6 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    // Resolve plan prices from env; defaults (in paise): ₹999 and ₹4,999.
-    PLAN_AMOUNT_PAISE['18_week_semi_guided'] =
-      parseInt(Deno.env.get('PLAN_PRICE_18_WEEK_PAISE') ?? '99900', 10)
-    PLAN_AMOUNT_PAISE['one_on_one_intensive'] =
-      parseInt(Deno.env.get('PLAN_PRICE_ONE_ON_ONE_PAISE') ?? '499900', 10)
-
     // Validate caller.
     const token = authHeader.replace(/^Bearer\s+/i, '')
     const supabaseUser = createClient(supabaseUrl, anonKey, {
@@ -66,13 +82,23 @@ Deno.serve(async (req: Request) => {
 
     const body = (await req.json()) as {
       plan?: string
+      /** Package length: 3, 6, or 12 months. */
+      duration_months?: number
       /** Therapist/admin may pass this to create an order on behalf of a client. */
       on_behalf_of_client_id?: string
     }
-    const plan = body.plan
-    if (!plan || !(plan in PLAN_AMOUNT_PAISE)) {
+    const plan = body.plan as PaidPlan
+    if (!plan || !VALID_PLANS.includes(plan)) {
       return new Response(
         JSON.stringify({ error: 'Invalid plan. Must be 18_week_semi_guided or one_on_one_intensive' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const durationMonths = Number(body.duration_months)
+    if (!VALID_MONTHS.includes(durationMonths)) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid duration_months. Must be 3, 6, or 12' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
@@ -117,7 +143,7 @@ Deno.serve(async (req: Request) => {
       clientId = body.on_behalf_of_client_id
     }
 
-    const amountPaise = PLAN_AMOUNT_PAISE[plan]!
+    const amountPaise = resolveAmountPaise(plan, durationMonths)
 
     // Create the Razorpay order via their REST API.
     const receipt = `zs_${clientId.slice(0, 8)}_${Date.now()}`
@@ -131,7 +157,7 @@ Deno.serve(async (req: Request) => {
         amount: amountPaise,
         currency: 'INR',
         receipt,
-        notes: { client_id: clientId, plan },
+        notes: { client_id: clientId, plan, duration_months: String(durationMonths) },
       }),
     })
 
@@ -151,6 +177,7 @@ Deno.serve(async (req: Request) => {
       client_id: clientId,
       razorpay_order_id: rzOrder.id,
       plan,
+      duration_months: durationMonths,
       amount_paise: amountPaise,
       currency: 'INR',
       status: 'created',
@@ -168,6 +195,7 @@ Deno.serve(async (req: Request) => {
         currency: 'INR',
         key_id: razorpayKeyId,
         plan,
+        duration_months: durationMonths,
         client_id: clientId,
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

@@ -43,6 +43,7 @@ type RazorpayPaymentResponse = {
  */
 export async function startRazorpayCheckout(
   plan: '18_week_semi_guided' | 'one_on_one_intensive',
+  durationMonths: 3 | 6 | 12,
   clientName: string,
   clientEmail: string,
   onStatusChange?: (msg: string) => void,
@@ -52,7 +53,7 @@ export async function startRazorpayCheckout(
     onStatusChange?.('Creating payment order…')
     await loadRazorpayScript()
 
-    const body: Record<string, string> = { plan }
+    const body: Record<string, string | number> = { plan, duration_months: durationMonths }
     if (onBehalfOfClientId) body.on_behalf_of_client_id = onBehalfOfClientId
 
     const { data: orderData, error: orderErr } = await supabase.functions.invoke(
@@ -82,7 +83,7 @@ export async function startRazorpayCheckout(
           currency,
           order_id,
           name: 'Zen Space',
-          description: plan === '18_week_semi_guided' ? '18-week semi-guided plan' : '1-on-1 intensive guided plan',
+          description: `${plan === '18_week_semi_guided' ? '18-week semi-guided plan' : '1-on-1 intensive guided plan'} · ${durationMonths} months`,
           prefill: { name: clientName, email: clientEmail },
           theme: { color: '#34d399' },
           handler: (resp: RazorpayPaymentResponse) => resolve(resp),

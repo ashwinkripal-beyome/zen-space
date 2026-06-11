@@ -29,6 +29,7 @@ import {
 } from '@/components/ReportGenerationWaitOverlay'
 import { OneOnOneActivitySelector } from '@/components/OneOnOneActivitySelector'
 import { PLAN_META } from '@/lib/planTiers'
+import { PLAN_PACKAGES, formatPackageMonths, type PackageMonths } from '@/lib/planPackages'
 import { startRazorpayCheckout } from '@/lib/razorpay'
 import { messageFromFunctionInvokeFailure } from '@/lib/functionInvokeError'
 import { assessZenGenerationHealth, type ZenGenerationHealth } from '@/lib/reportGenerationHealth'
@@ -116,6 +117,7 @@ type ClientProfileRow = ProfileNameFields & {
   is_paid_customer: boolean
   client_status: string | null
   current_plan: string | null
+  current_plan_months: number | null
 }
 
 type LifecycleOption = {
@@ -147,7 +149,7 @@ const LIFECYCLE_OPTIONS: LifecycleOption[] = [
 ]
 
 type PaidPlan = '18_week_semi_guided' | 'one_on_one_intensive'
-type MarkAsStep = 'main' | 'paid-plan' | 'paid-method'
+type MarkAsStep = 'main' | 'paid-plan' | 'paid-package' | 'paid-method'
 
 export function TherapistClientDetailPage() {
   const { user } = useAuth()
@@ -159,6 +161,7 @@ export function TherapistClientDetailPage() {
   const [markAsOpen, setMarkAsOpen] = useState(false)
   const [markAsStep, setMarkAsStep] = useState<MarkAsStep>('main')
   const [markAsPlan, setMarkAsPlan] = useState<PaidPlan | null>(null)
+  const [markAsMonths, setMarkAsMonths] = useState<PackageMonths | null>(null)
   const [razorpayStatus, setRazorpayStatus] = useState<string | null>(null)
   const [hasCompletedSelfAssessment, setHasCompletedSelfAssessment] = useState(false)
   const [notes, setNotes] = useState<ClientTherapistNoteRow[]>([])
@@ -199,7 +202,7 @@ export function TherapistClientDetailPage() {
         supabase
           .from('profiles')
           .select(
-            'id, email, name, first_name, last_name, gender, age, phone_number, dob, company, company_not_listed, is_paid_customer, client_status, current_plan, company_department:company_departments(name)'
+            'id, email, name, first_name, last_name, gender, age, phone_number, dob, company, company_not_listed, is_paid_customer, client_status, current_plan, current_plan_months, company_department:company_departments(name)'
           )
           .eq('id', clientId!)
           .maybeSingle(),
@@ -250,6 +253,7 @@ export function TherapistClientDetailPage() {
         is_paid_customer: paid,
         client_status: typeof p.client_status === 'string' ? p.client_status : null,
         current_plan: typeof p.current_plan === 'string' ? p.current_plan : null,
+        current_plan_months: typeof p.current_plan_months === 'number' ? p.current_plan_months : null,
       })
       setHasCompletedSelfAssessment(Boolean(selfAssessmentResult.data?.id))
     } finally {
@@ -643,19 +647,20 @@ export function TherapistClientDetailPage() {
   }
 
   /** Cash payment: call RPC then auto-generate if semi-guided. */
-  const handleMarkPaidCash = async (plan: PaidPlan) => {
+  const handleMarkPaidCash = async (plan: PaidPlan, months: PackageMonths) => {
     if (!clientId) return
     setSavingStatus(true)
     const { error } = await supabase.rpc('set_client_paid', {
       p_client_id: clientId,
       p_plan: plan,
+      p_months: months,
     })
     if (error) {
       toast.error(error.message)
       setSavingStatus(false)
       return
     }
-    setProfile(p => p ? { ...p, client_status: 'pro', is_paid_customer: true, current_plan: plan } : p)
+    setProfile(p => p ? { ...p, client_status: 'pro', is_paid_customer: true, current_plan: plan, current_plan_months: months } : p)
 
     if (plan === '18_week_semi_guided') {
       const assessmentIdForPlan = await fetchLatestAssessmentIdNeedingPlan()
@@ -678,14 +683,16 @@ export function TherapistClientDetailPage() {
       }
     }
 
-    toast.success(plan === '18_week_semi_guided' ? 'Client marked as paid (18-week semi-guided)' : 'Client marked as paid (1-on-1 intensive)')
+    toast.success(
+      `${plan === '18_week_semi_guided' ? 'Client marked as paid (18-week semi-guided' : 'Client marked as paid (1-on-1 intensive'} · ${months} months)`
+    )
     void loadOverrides()
     setSavingStatus(false)
     closeMarkAsDialog()
   }
 
   /** Razorpay payment on behalf of the client (therapist-initiated checkout). */
-  const handleMarkPaidRazorpay = async (plan: PaidPlan) => {
+  const handleMarkPaidRazorpay = async (plan: PaidPlan, months: PackageMonths) => {
     if (!clientId || !profile) return
     setSavingStatus(true)
     setRazorpayStatus('Creating payment order…')
@@ -696,6 +703,7 @@ export function TherapistClientDetailPage() {
 
     const result = await startRazorpayCheckout(
       plan,
+      months,
       clientName,
       clientEmail,
       msg => setRazorpayStatus(msg),
@@ -710,7 +718,7 @@ export function TherapistClientDetailPage() {
       return
     }
 
-    setProfile(p => p ? { ...p, client_status: 'pro', is_paid_customer: true, current_plan: plan } : p)
+    setProfile(p => p ? { ...p, client_status: 'pro', is_paid_customer: true, current_plan: plan, current_plan_months: months } : p)
     toast.success('Payment successful! Plan activated.')
 
     if (plan === '18_week_semi_guided') {
@@ -740,6 +748,7 @@ export function TherapistClientDetailPage() {
   const openMarkAsDialog = () => {
     setMarkAsStep('main')
     setMarkAsPlan(null)
+    setMarkAsMonths(null)
     setMarkAsOpen(true)
   }
 
@@ -747,6 +756,7 @@ export function TherapistClientDetailPage() {
     setMarkAsOpen(false)
     setMarkAsStep('main')
     setMarkAsPlan(null)
+    setMarkAsMonths(null)
   }
 
   const effectiveStatus: ClientStatusLabel = computeClientStatus({
@@ -820,6 +830,12 @@ export function TherapistClientDetailPage() {
             <Badge variant="outline" className={cn('capitalize', statusMeta.badgeClass)}>
               {statusMeta.label}
             </Badge>
+            {profile.is_paid_customer && profile.current_plan && profile.current_plan !== 'free' && (
+              <Badge variant="outline" className={cn(CLIENT_STATUS_META.pro.badgeClass)}>
+                {PLAN_META[profile.current_plan as '18_week_semi_guided' | 'one_on_one_intensive']?.label ?? profile.current_plan}
+                {profile.current_plan_months ? ` · ${formatPackageMonths(profile.current_plan_months)}` : ''}
+              </Badge>
+            )}
           </div>
           {emailTrimmed ? (
             <p className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -1215,12 +1231,24 @@ export function TherapistClientDetailPage() {
             <DialogTitle className="text-foreground">
               {markAsStep === 'main' && 'Mark as'}
               {markAsStep === 'paid-plan' && 'Select plan'}
-              {markAsStep === 'paid-method' && (
+              {markAsStep === 'paid-package' && (
                 <span className="flex items-center gap-2">
                   <button
                     type="button"
                     className="flex items-center gap-1 text-sm font-normal text-muted-foreground hover:text-foreground"
                     onClick={() => setMarkAsStep('paid-plan')}
+                  >
+                    <ArrowLeft className="size-3.5" aria-hidden /> Back
+                  </button>
+                  <span className="ml-1">Choose package</span>
+                </span>
+              )}
+              {markAsStep === 'paid-method' && (
+                <span className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="flex items-center gap-1 text-sm font-normal text-muted-foreground hover:text-foreground"
+                    onClick={() => setMarkAsStep('paid-package')}
                   >
                     <ArrowLeft className="size-3.5" aria-hidden /> Back
                   </button>
@@ -1299,7 +1327,7 @@ export function TherapistClientDetailPage() {
                     key={tier}
                     type="button"
                     disabled={savingStatus}
-                    onClick={() => { setMarkAsPlan(tier); setMarkAsStep('paid-method') }}
+                    onClick={() => { setMarkAsPlan(tier); setMarkAsMonths(null); setMarkAsStep('paid-package') }}
                     className={cn(
                       'w-full rounded-xl border px-4 py-3 text-left transition-all',
                       'hover:bg-white/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30',
@@ -1311,7 +1339,7 @@ export function TherapistClientDetailPage() {
                     <div className="flex items-center justify-between gap-3">
                       <span className="text-sm font-medium text-foreground">{meta.label}</span>
                       <div className="flex shrink-0 items-center gap-2">
-                        <span className="text-sm font-semibold text-foreground">{meta.priceLabel}</span>
+                        <span className="text-xs text-muted-foreground">From {PLAN_PACKAGES[tier][0].priceLabel}</span>
                         {isCurrent && (
                           <Badge variant="outline" className={cn(CLIENT_STATUS_META.pro.badgeClass)}>
                             Current
@@ -1326,18 +1354,64 @@ export function TherapistClientDetailPage() {
             </div>
           )}
 
-          {/* Step 3 — pick payment method */}
-          {markAsStep === 'paid-method' && markAsPlan && (
+          {/* Step 3 — pick package length */}
+          {markAsStep === 'paid-package' && markAsPlan && (
             <div className="space-y-3 py-1">
               <p className="text-xs text-muted-foreground">
                 Plan: <span className="font-medium text-foreground">{PLAN_META[markAsPlan].label}</span>
-                {' · '}{PLAN_META[markAsPlan].priceLabel}
+              </p>
+              {PLAN_PACKAGES[markAsPlan].map(pkg => {
+                const isCurrentPkg =
+                  profile?.current_plan === markAsPlan && profile?.current_plan_months === pkg.months
+                return (
+                  <button
+                    key={pkg.months}
+                    type="button"
+                    disabled={savingStatus}
+                    onClick={() => { setMarkAsMonths(pkg.months); setMarkAsStep('paid-method') }}
+                    className={cn(
+                      'w-full rounded-xl border px-4 py-3 text-left transition-all',
+                      'hover:bg-white/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30',
+                      isCurrentPkg
+                        ? 'border-white/25 bg-white/[0.06]'
+                        : 'border-white/10 bg-white/[0.03]'
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm font-medium text-foreground">{pkg.months} months</span>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span className="text-sm font-semibold text-foreground">{pkg.priceLabel}</span>
+                        {isCurrentPkg && (
+                          <Badge variant="outline" className={cn(CLIENT_STATUS_META.pro.badgeClass)}>
+                            Current
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Effective {pkg.perMonthLabel}
+                    </p>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Step 4 — pick payment method */}
+          {markAsStep === 'paid-method' && markAsPlan && markAsMonths && (
+            <div className="space-y-3 py-1">
+              <p className="text-xs text-muted-foreground">
+                Plan: <span className="font-medium text-foreground">{PLAN_META[markAsPlan].label}</span>
+                {' · '}
+                <span className="font-medium text-foreground">{markAsMonths} months</span>
+                {' · '}
+                {PLAN_PACKAGES[markAsPlan].find(p => p.months === markAsMonths)?.priceLabel}
               </p>
 
               <button
                 type="button"
                 disabled={savingStatus}
-                onClick={() => void handleMarkPaidCash(markAsPlan)}
+                onClick={() => void handleMarkPaidCash(markAsPlan, markAsMonths)}
                 className={cn(
                   'w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-left transition-all',
                   'hover:bg-white/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30'
@@ -1355,7 +1429,7 @@ export function TherapistClientDetailPage() {
               <button
                 type="button"
                 disabled={savingStatus}
-                onClick={() => void handleMarkPaidRazorpay(markAsPlan)}
+                onClick={() => void handleMarkPaidRazorpay(markAsPlan, markAsMonths)}
                 className={cn(
                   'w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-left transition-all',
                   'hover:bg-white/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30'

@@ -101,7 +101,7 @@ Deno.serve(async (req: Request) => {
     // Look up the order to get the plan.
     const { data: orderRow, error: orderErr } = await admin
       .from('payment_orders')
-      .select('client_id, plan, status')
+      .select('client_id, plan, duration_months, status')
       .eq('razorpay_order_id', razorpay_order_id)
       .maybeSingle()
 
@@ -149,9 +149,12 @@ Deno.serve(async (req: Request) => {
     }
 
     // Activate the plan via SECURITY DEFINER RPC (bypasses RLS safely).
+    // Activate against the order's client (may differ from the caller when a
+    // therapist/admin paid on behalf of a client).
     const { error: activateErr } = await admin.rpc('activate_client_plan', {
-      p_client_id: user.id,
+      p_client_id: orderRow.client_id,
       p_plan: orderRow.plan,
+      p_months: orderRow.duration_months,
       p_razorpay_order_id: razorpay_order_id,
       p_payment_id: razorpay_payment_id,
       p_signature: razorpay_signature,
@@ -165,7 +168,7 @@ Deno.serve(async (req: Request) => {
       )
     }
 
-    console.info('Plan activated', { client_id: user.id, plan: orderRow.plan, order: razorpay_order_id })
+    console.info('Plan activated', { client_id: orderRow.client_id, plan: orderRow.plan, months: orderRow.duration_months, order: razorpay_order_id })
 
     return new Response(
       JSON.stringify({ ok: true, plan: orderRow.plan }),
