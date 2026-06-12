@@ -27,6 +27,15 @@ import { cn } from '@/lib/utils'
 
 const glassCard = cn('zen-glass-card ring-0 shadow-none', 'zen-ring-primary')
 
+/**
+ * Opaque surface for the dialogs. `.zen-glass-card` paints a 5.5%-white fill and
+ * relies on `bg-popover` underneath staying opaque, but the dev (injected <style>)
+ * and production (bundled/minified) builds order those rules differently — in prod
+ * the translucent glass fill wins and the modal turns see-through. Forcing the
+ * popover colour inline wins over both regardless of cascade order.
+ */
+const dialogSurfaceStyle: React.CSSProperties = { backgroundColor: 'oklch(0.205 0 0)' }
+
 type EditorMode =
   | { kind: 'create' }
   | { kind: 'edit'; company: CompanyWithDepartments }
@@ -340,6 +349,7 @@ export function TherapistManageCompaniesPage() {
       >
         <DialogContent
           className="zen-glass-card rounded-2xl border-white/15 text-foreground"
+          style={dialogSurfaceStyle}
         >
           <form onSubmit={handleSubmit} className="space-y-5">
             <DialogHeader>
@@ -464,7 +474,10 @@ export function TherapistManageCompaniesPage() {
           if (!open) setPendingDeleteId(null)
         }}
       >
-        <DialogContent className="zen-glass-card rounded-2xl border-white/15 text-foreground">
+        <DialogContent
+          className="zen-glass-card rounded-2xl border-white/15 text-foreground"
+          style={dialogSurfaceStyle}
+        >
           <DialogHeader>
             <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
               Delete company
@@ -517,7 +530,10 @@ export function TherapistManageCompaniesPage() {
           }
         }}
       >
-        <DialogContent className="zen-glass-card max-h-[85vh] overflow-hidden rounded-2xl border-white/15 text-foreground sm:max-w-lg">
+        <DialogContent
+          className="zen-glass-card max-h-[85vh] overflow-hidden rounded-2xl border-white/15 text-foreground sm:max-w-lg"
+          style={dialogSurfaceStyle}
+        >
           <DialogHeader>
             <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
               Clients · read only

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { CalendarDays, ChevronDown, Download, Loader2 } from 'lucide-react'
+import { CalendarDays, CalendarRange, Download, Loader2, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { PlanChecklist } from '@/components/PlanChecklist'
 import { PlanTimeline } from '@/components/PlanTimeline'
+import { PlanSectionToggle } from '@/components/PlanSectionToggle'
 import { PracticeDisclaimerDialog } from '@/components/PracticeDisclaimerDialog'
 import { RitualSectionsView } from '@/components/RitualSectionsView'
 import { resolveRitualDisplayParts } from '@/lib/resolveReportSections'
@@ -295,21 +296,14 @@ export function TherapistClientPlanPage() {
           >
             <CardContent className="px-3 pt-6 md:px-6">
               <div>
-                <button
-                  type="button"
+                <PlanSectionToggle
+                  icon={Sparkles}
+                  title="Fourfold Zen Ritual"
+                  subtitle="The client's daily fourfold practice"
+                  accent="violet"
+                  expanded={ritualExpanded}
                   onClick={toggleRitualSection}
-                  className="flex w-full items-center justify-between gap-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-left transition-colors hover:bg-white/10"
-                  aria-expanded={ritualExpanded}
-                >
-                  <span className="text-base font-semibold text-foreground">Fourfold Zen Ritual</span>
-                  <ChevronDown
-                    className={cn(
-                      'size-5 shrink-0 text-muted-foreground transition-transform',
-                      ritualExpanded && 'rotate-180',
-                    )}
-                    aria-hidden
-                  />
-                </button>
+                />
                 <div className={cn('mt-4 px-0.5', !ritualExpanded && 'hidden')} aria-hidden={!ritualExpanded}>
                   {ritualDisplayParts.length > 0 ? (
                     <RitualSectionsView parts={ritualDisplayParts} />
@@ -322,21 +316,14 @@ export function TherapistClientPlanPage() {
               </div>
 
               <div className="mt-8 border-t border-white/10 pt-6">
-                <button
-                  type="button"
+                <PlanSectionToggle
+                  icon={CalendarRange}
+                  title="18-Week Plan"
+                  subtitle="The client's Zen Garden journey, week by week"
+                  accent="emerald"
+                  expanded={planExpanded}
                   onClick={togglePlanSection}
-                  className="flex w-full items-center justify-between gap-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-left transition-colors hover:bg-white/10"
-                  aria-expanded={planExpanded}
-                >
-                  <span className="text-base font-semibold text-foreground">18-Week Plan</span>
-                  <ChevronDown
-                    className={cn(
-                      'size-5 shrink-0 text-muted-foreground transition-transform',
-                      planExpanded && 'rotate-180',
-                    )}
-                    aria-hidden
-                  />
-                </button>
+                />
                 <div className={cn('mt-4', !planExpanded && 'hidden')} aria-hidden={!planExpanded}>
                   {reportId ? (
                     <PlanChecklist html={planContent} userId={clientId} reportId={reportId} readOnly />
