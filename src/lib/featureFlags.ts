@@ -4,8 +4,8 @@
 
 /**
  * One-time WhatsApp phone verification for clients.
- * Set VITE_WHATSAPP_OTP_ENABLED=false to temporarily hide the whole flow
- * (e.g. while the WhatsApp access token is being (re)provisioned). Defaults ON.
+ * Temporarily disabled by default while WhatsApp OTP delivery is broken.
+ * Set VITE_WHATSAPP_OTP_ENABLED=true to re-enable the flow once fixed.
  */
 export const WHATSAPP_OTP_ENABLED =
-  (import.meta.env.VITE_WHATSAPP_OTP_ENABLED ?? 'true') !== 'false'
+  (import.meta.env.VITE_WHATSAPP_OTP_ENABLED ?? 'false') === 'true'
